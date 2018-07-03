@@ -34,15 +34,11 @@ decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
 	decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
 decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 126:7, Len:16, Rest/bytes>>) ->
 	decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
-decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>) ->
-	Payload = unmask(Mask, Rest),
-	Len = byte_size(Payload),
-
-unmask(0, Rest) ->
-	Rest;
-unmask(1, <<Key:32, Rest/binary>>) ->
+decode_packet(<<Fin:1, Reserved:3, Op:4, 1:1, 127:7, Len:64, MaskKey:32, Rest/bytes>>) ->
 	% TODO: unmask
-	Rest.
+	decode_packet(<<Fin:1, Reserved:3, Op:4, 0:1, 127:7, Len:64, Payload/bytes>>);
+decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Payload/bytes>>) ->
+	Len = byte_size(Payload), % TODO: return some error?
 
 listen(Port, WsOpts, ListenOpts) ->
 	% WsOpts (all maybe): secure/ssl, resource (path) (or just accept everything and return requested path in accept/n?)
