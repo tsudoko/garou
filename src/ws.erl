@@ -7,7 +7,7 @@
 %  - only one CONNECTING connection from a given IP at a time (4.1, 1#2) (???)
 %  - handle SNI somehow? (4.1, 1#5 and 4.2.2, #1) (???)
 %    - this seems annoying enough to justify not supporting TLS altogether
-%      (i.e. offload to some reverse proxy)
+%      (i.e. offload to some reverse proxy), that would violate 10.6, though
 %  - only GETs, only HTTP/1.1 or higher (4.1, 2#2 and 4.2.1, #1) (400)
 %  - non-80 (for non-ssl connections)/443 (for ssl connections) ports must be
 %    specified explicitly in the Host header (4.1, 2#4) (???)
@@ -25,6 +25,7 @@
 %  - all frames from the client must be masked (Close with 1002)
 %  - all frames from the server must not be masked
 %  - unknown opcode -> 7.1.7 fail
+%  - limit frame and message size (10.4)
 
 sec_websocket_accept(Key) ->
 	base64:encode(crypto:hash(sha, [Key, ?WS_GUID])).
