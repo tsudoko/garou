@@ -1,3 +1,4 @@
+-module(ws).
 -define(WS_GUID, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").
 
 % pedantic TODO (server only):
@@ -26,7 +27,7 @@
 %  - unknown opcode -> 7.1.7 fail
 
 sec_websocket_accept(Key) ->
-	base64:encode(crypto:hash(sha, [Key, WS_GUID])).
+	base64:encode(crypto:hash(sha, [Key, ?WS_GUID])).
 
 %decode_packet(_) -> % ???? is this needed?
 %	{more, undefined};
@@ -35,7 +36,7 @@ decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
 decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 126:7, Len:16, Rest/bytes>>) ->
 	decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
 decode_packet(<<Fin:1, Reserved:3, Op:4, 1:1, 127:7, Len:64, MaskKey:32, Rest/bytes>>) ->
-	% TODO: unmask
+	Payload = Rest, % TODO: unmask
 	decode_packet(<<Fin:1, Reserved:3, Op:4, 0:1, 127:7, Len:64, Payload/bytes>>);
 decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Payload/bytes>>) ->
 	Len = byte_size(Payload), % TODO: return some error?
@@ -43,3 +44,4 @@ decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Payload/bytes>>)
 listen(Port, WsOpts, ListenOpts) ->
 	% WsOpts (all maybe): secure/ssl, resource (path) (or just accept everything and return requested path in accept/n?)
 	% ListenOpts: just pass them transparently to gen_tcp:listen/2?
+	ok.
