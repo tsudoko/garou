@@ -27,3 +27,23 @@
 
 sec_websocket_accept(Key) ->
 	base64:encode(crypto:hash(sha, [Key, WS_GUID])).
+
+%decode_packet(_) -> % ???? is this needed?
+%	{more, undefined};
+decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
+	decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
+decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 126:7, Len:16, Rest/bytes>>) ->
+	decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
+decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>) ->
+	Payload = unmask(Mask, Rest),
+	Len = byte_size(Payload),
+
+unmask(0, Rest) ->
+	Rest;
+unmask(1, <<Key:32, Rest/binary>>) ->
+	% TODO: unmask
+	Rest.
+
+listen(Port, WsOpts, ListenOpts) ->
+	% WsOpts (all maybe): secure/ssl, resource (path) (or just accept everything and return requested path in accept/n?)
+	% ListenOpts: just pass them transparently to gen_tcp:listen/2?
