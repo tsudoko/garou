@@ -58,6 +58,22 @@ decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
 %decode_frame(_) -> % ???? is this needed?
 %	{more, undefined}.
 
+%decode_message(Frame) ->
+%	% TODO: handle multiple frames (fin == 0)
+%	% maaaybe TODO: unmask here instead of doing it in decode_frame/1,
+%	%               would preserve frame metadata better too
+
+% important details:
+%  - An endpoint MUST be capable of handling control frames in the
+%    middle of a fragmented message.
+%  - As control frames cannot be fragmented, an intermediary MUST NOT
+%    attempt to change the fragmentation of a control frame.
+
+% NOTE: If control frames could not be interjected, the latency of a
+% ping, for example, would be very long if behind a large message.
+% Hence, the requirement of handling control frames in the middle of a
+% fragmented message.
+
 listen(Port, WsOpts, ListenOpts) ->
 	% WsOpts (all maybe): secure/ssl, resource (path) (or just accept everything and return requested path in accept/n?)
 	% ListenOpts: just pass them transparently to gen_tcp:listen/2?
