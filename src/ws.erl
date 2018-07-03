@@ -47,14 +47,14 @@ unmask(Key, Data, R) when byte_size(Key) > byte_size(Data) ->
 
 %decode_frame(_) -> % ???? is this needed?
 %	{more, undefined};
-decode_frame(<<Fin:1, Reserved:3, Op:4, 1:1, 127:7, Len:64, MaskKey:4/bytes, Rest/bytes>>) ->
-	decode_frame(<<Fin:1, Reserved:3, Op:4, 0:1, 127:7, Len:64, (unmask(MaskKey, Rest))/bytes>>);
-decode_frame(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Payload/bytes>>) ->
+decode_frame(<<Fin:1, Reserved:3/bits, Op:4, 1:1, 127:7, Len:64, MaskKey:4/bytes, Rest/bytes>>) ->
+	decode_frame(<<Fin:1, Reserved:3/bits, Op:4, 0:1, 127:7, Len:64, (unmask(MaskKey, Rest))/bytes>>);
+decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, 127:7, Len:64, Payload/bytes>>) ->
 	Len = byte_size(Payload), % TODO: return some error? alternatively move to the pattern above
-decode_frame(<<Fin:1, Reserved:3, Op:4, Mask:1, 126:7, Len:16, Rest/bytes>>) ->
-	decode_frame(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
-decode_frame(<<Fin:1, Reserved:3, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
-	decode_frame(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>).
+decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, 126:7, Len:16, Rest/bytes>>) ->
+	decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
+decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
+	decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>).
 
 listen(Port, WsOpts, ListenOpts) ->
 	% WsOpts (all maybe): secure/ssl, resource (path) (or just accept everything and return requested path in accept/n?)
