@@ -29,6 +29,17 @@
 sec_websocket_accept(Key) ->
 	base64:encode(crypto:hash(sha, [Key, ?WS_GUID])).
 
+unmask(Key, Data) ->
+	unmask(Key, Data, <<>>).
+unmask(Key, Data, R) when byte_size(Key) =< byte_size(Data) ->
+	Keylen = byte_size(Key),
+	<<Cur:Keylen/bytes, Rest/bytes>> = Data,
+	unmask(Key, Rest, <<R/bytes, (crypto:exor(Cur, Key))/bytes>>);
+unmask(Key, Data, R) when byte_size(Key) > byte_size(Data) ->
+	Datalen = byte_size(Data),
+	<<CutKey:Datalen/bytes, _/bytes>> = Key,
+	<<R/bytes, (crypto:exor(Data, CutKey))/bytes>>.
+
 %decode_packet(_) -> % ???? is this needed?
 %	{more, undefined};
 decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
@@ -36,10 +47,9 @@ decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
 decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 126:7, Len:16, Rest/bytes>>) ->
 	decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
 decode_packet(<<Fin:1, Reserved:3, Op:4, 1:1, 127:7, Len:64, MaskKey:32, Rest/bytes>>) ->
-	Payload = Rest, % TODO: unmask
-	decode_packet(<<Fin:1, Reserved:3, Op:4, 0:1, 127:7, Len:64, Payload/bytes>>);
+	decode_packet(<<Fin:1, Reserved:3, Op:4, 0:1, 127:7, Len:64, (unmask(MaskKey, Rest))/bytes>>);
 decode_packet(<<Fin:1, Reserved:3, Op:4, Mask:1, 127:7, Len:64, Payload/bytes>>) ->
-	Len = byte_size(Payload), % TODO: return some error?
+	Len = byte_size(Payload), % TODO: return some error? alternatively move to the pattern above
 
 listen(Port, WsOpts, ListenOpts) ->
 	% WsOpts (all maybe): secure/ssl, resource (path) (or just accept everything and return requested path in accept/n?)
