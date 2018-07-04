@@ -1,6 +1,7 @@
 -module(ws).
--export([decode_frame/1]).
+-export([start/2, decode_frame/1]).
 
+-include_lib("kernel/include/logger.hrl").
 -define(WS_GUID, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").
 
 % pedantic TODO (server only):
@@ -87,26 +88,16 @@ handle_data(S, 1, Op, Buf) ->
 	% TODO: send buf to handler
 	{0, <<>>}.
 
-% important details:
-%  - An endpoint MUST be capable of handling control frames in the
-%    middle of a fragmented message.
-%  - As control frames cannot be fragmented, an intermediary MUST NOT
-%    attempt to change the fragmentation of a control frame.
-
-% NOTE: If control frames could not be interjected, the latency of a
-% ping, for example, would be very long if behind a large message.
-% Hence, the requirement of handling control frames in the middle of a
-% fragmented message.
-
-loop_handleframe(S, _, _, {PrevOp, MsgBuf}, {Fin, {FType, Opcode}, MaskKey, Payload}) ->
+loop_handleframe(Parent, S, _, _, {PrevOp, MsgBuf}, {Fin, {FType, Opcode}, MaskKey, Payload}) ->
 	NewData = unmask(MaskKey, Payload),
 	NewOp = case Opcode of 0 -> PrevOp; X -> X end,
 	control_op(S, Opcode, NewData),
-	loop(S, <<>>, handle_data(S, Fin, NewOp, <<MsgBuf, NewData/bytes>>));
+	loop(Parent, S, <<>>, handle_data(S, Fin, NewOp, <<MsgBuf, NewData/bytes>>));
 loop_handleframe(S, FrameBuf, NewF, _, {more, _}) ->
-	loop(S, <<FrameBuf/bytes, NewF/bytes>>, {0, <<>>}).
+	loop(Parent, S, <<FrameBuf/bytes, NewF/bytes>>, {0, <<>>}).
 
-loop(S, FrameBuf, {PrevOp, MsgBuf}) ->
+loop(Parent, S, FrameBuf, {PrevOp, MsgBuf}) ->
+	inet:setopts(S, [{active, once}]),
 	receive
 		{tcp, S, NewF} ->
 			% control frames can be sent whenever, even in the middle of
@@ -117,13 +108,35 @@ loop(S, FrameBuf, {PrevOp, MsgBuf}) ->
 				{1, {control, Opcode}, MaskKey, Payload} ->
 					NewData = unmask(MaskKey, Payload),
 					control_op(S, Opcode, NewData),
-					loop(S, FrameBuf, {PrevOp, MsgBuf});
+					loop(Parent, S, FrameBuf, {PrevOp, MsgBuf});
 				_ ->
-					loop_handleframe(S, FrameBuf, NewF, {PrevOp, MsgBuf}, decode_frame(<<FrameBuf/bytes, NewF/bytes>>))
+					loop_handleframe(Parent, S, FrameBuf, NewF, {PrevOp, MsgBuf}, decode_frame(<<FrameBuf/bytes, NewF/bytes>>))
 			end
+		{tcp_closed, S} ->
+			Parent ! conndied,
+			ok
 	end.
 
-listen(Port, WsOpts, ListenOpts) ->
-	% WsOpts (all maybe): secure/ssl, resource (path) (or just accept everything and return requested path in accept/n?)
-	% ListenOpts: just pass them transparently to gen_tcp:listen/2?
-	ok.
+srvloop(Maxnum, LSock) ->
+	srvloop(Maxnum, LSock, 0).
+srvloop(Maxnum, LSock, Maxnum) ->
+	receive conndied -> srvloop(Maxnum, LSock, Num - 1) end.
+srvloop(Maxnum, LSock, Num) ->
+	case gen_tcp:accept(LSock) of
+		{ok, S} ->
+			spawn(?MODULE, loop, [self(), S, <<>>, {0, <<>>}]),
+			srvloop(Maxnum, LSock, Num + 1);
+		{error, _} = Err ->
+			?LOG_NOTICE("socket error: ~p~n", [Err]),
+			srvloop(Maxnum, LSock, Num)
+	end.
+
+start(Maxnum, LPort) ->
+	case gen_tcp:listen(LPort, [{active, false}]) of
+		{ok, LS} ->
+			srvloop(Maxnum, LS),
+			{ok, Port} = inet:port(LS),
+			Port;
+		{error, _} = Err ->
+			Err
+	end.
