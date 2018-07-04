@@ -160,8 +160,8 @@ srvloop(Maxnum, LSock, Num) ->
 			{ok, S} ->
 				spawn(?MODULE, handshake, [self(), S]),
 				srvloop(Maxnum, LSock, Num + 1);
-			{error, _} = Err ->
-				?LOG_NOTICE("socket error: ~p~n", [Err]),
+			{error, E} ->
+				?LOG_NOTICE("socket error: ~p~n", [E]),
 				srvloop(Maxnum, LSock, Num)
 		end
 	end.
