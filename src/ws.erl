@@ -139,7 +139,7 @@ decode_handshake(S, Params, Buf) ->
 	end.
 
 ensure_contains(Key, Proplist, Value) ->
-	true = nomatch /= string:find(proplists:get_value(Key, Proplist), Value).
+	true = nomatch /= string:find(string:casefold(proplists:get_value(Key, Proplist)), Value).
 
 handshake(Parent, S) ->
 	Params = decode_handshake(S),
