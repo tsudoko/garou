@@ -1,5 +1,5 @@
 -module(ws).
--export([start/2, decode_frame/1]).
+-export([start/3, decode_frame/1]).
 -export([handshake/2]).
 
 -include_lib("kernel/include/logger.hrl").
@@ -89,7 +89,7 @@ handle_data(S, 1, Op, Buf) ->
 	% TODO: send buf to handler
 	{0, <<>>}.
 
-loop_handleframe(Parent, S, _, _, {PrevOp, MsgBuf}, {Fin, {data, Opcode}, MaskKey, Payload}) ->
+loop_handleframe(Parent, S, _, _, {PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey, Payload}}) ->
 	NewData = unmask(MaskKey, Payload),
 	NewOp = case Opcode of 0 -> PrevOp; X -> X end,
 	loop(Parent, S, <<>>, handle_data(S, Fin, NewOp, <<MsgBuf, NewData/bytes>>));
@@ -97,22 +97,26 @@ loop_handleframe(Parent, S, FrameBuf, NewF, _, {more, _}) ->
 	loop(Parent, S, <<FrameBuf/bytes, NewF/bytes>>, {0, <<>>}).
 
 loop(Parent, S, FrameBuf, {PrevOp, MsgBuf}) ->
-	inet:setopts(S, [{active, once}]),
-	receive
-		{tcp, S, NewF} ->
+	case gen_tcp:recv(S, 0, 5000) of
+		{ok, NewF} ->
+			io:format("received ~p~n", [NewF]),
 			% control frames can be sent whenever, even in the middle of
 			% a fragmented message, so we need to handle them separately
 
 			% TODO: close if error occurs
 			case decode_frame(NewF) of
-				{1, {control, Opcode}, MaskKey, Payload} ->
+				{ok, {1, {control, Opcode}, MaskKey, Payload}} ->
 					NewData = unmask(MaskKey, Payload),
 					control_op(S, Opcode, NewData),
 					loop(Parent, S, FrameBuf, {PrevOp, MsgBuf});
 				_ ->
 					loop_handleframe(Parent, S, FrameBuf, NewF, {PrevOp, MsgBuf}, decode_frame(<<FrameBuf/bytes, NewF/bytes>>))
 			end;
-		{tcp_closed, S} ->
+		{error, closed} ->
+			Parent ! conndied,
+			ok;
+		{error, E} ->
+			?LOG_NOTICE("socket error (recv) ~p~n", [E]),
 			Parent ! conndied,
 			ok
 	end.
@@ -172,13 +176,13 @@ srvloop(Maxnum, LSock, Num) ->
 				spawn(?MODULE, handshake, [self(), S]),
 				srvloop(Maxnum, LSock, Num + 1);
 			{error, E} ->
-				?LOG_NOTICE("socket error: ~p~n", [E]),
+				?LOG_NOTICE("socket error (accept): ~p~n", [E]),
 				srvloop(Maxnum, LSock, Num)
 		end
 	end.
 
-start(Maxnum, LPort) ->
-	case gen_tcp:listen(LPort, [{active, false}]) of
+start(Maxnum, LPort, Handler) ->
+	case gen_tcp:listen(LPort, [binary, {active, false}]) of
 		{ok, LS} ->
 			srvloop(Maxnum, LS),
 			{ok, Port} = inet:port(LS),
