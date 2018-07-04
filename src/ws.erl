@@ -78,9 +78,9 @@ control_op(_S, close, _) ->
 control_op(_, _, _) ->
 	ok.
 
-handle_data(_, 0, Op, Buf) when Op /= 0 ->
+handle_data(_, _Fin = 0, Op, Buf) when Op /= 0 ->
 	{Op, Buf};
-handle_data(S, 1, Op, Buf) ->
+handle_data(S, _Fin = 1, Op, Buf) ->
 	% TODO: send buf to handler
 	{0, <<>>}.
 
