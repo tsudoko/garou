@@ -60,14 +60,14 @@ opcode_to_integer(close) -> 8;
 opcode_to_integer(ping) -> 9;
 opcode_to_integer(pong) -> 10.
 
-decode_frame(<<Fin:1, Reserved:3/bits, Op:4, 0:1, 127:7, Len:64, Payload:Len/bytes, Rest/bytes>>) ->
+decode_frame(<<Fin:1, _:3/bits, Op:4, 0:1, 127:7, Len:64, Payload:Len/bytes, Rest/bytes>>) ->
 	{ok, {Fin, opcode(<<Op>>), undefined, Payload}, Rest};
-decode_frame(<<Fin:1, Reserved:3/bits, Op:4, 1:1, 127:7, Len:64, MaskKey:4/bytes, Payload:Len/bytes, Rest/bytes>>) ->
+decode_frame(<<Fin:1, _:3/bits, Op:4, 1:1, 127:7, Len:64, MaskKey:4/bytes, Payload:Len/bytes, Rest/bytes>>) ->
 	{ok, {Fin, opcode(<<Op>>), MaskKey, Payload}, Rest};
-decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, 126:7, Len:16, Rest/bytes>>) ->
-	decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
-decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
-	decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
+decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, 126:7, Len:16, Rest/bytes>>) ->
+	decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
+decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
+	decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
 decode_frame(_) ->
 	{more, undefined}.
 
