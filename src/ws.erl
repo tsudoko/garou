@@ -16,17 +16,17 @@
 %  - non-80 (for non-ssl connections)/443 (for ssl connections) ports must be
 %    specified explicitly in the Host header (4.1, 2#4) (???)
 %  - Sec-Websocket-Key must be a base64-encoded 16-byte value (4.1, 2#7 and 4.2.1, #5) (400)
-%  - the 4 headers mentioned above are required in the handshake
-%  - response must be 101, Upgrade=="websocket", Connection=="upgrade", Sec-Websocket-Accept blah (4.2.2 #5)
 %  - include sec-websocket-version in 400 responses
 %  - storing the origin somewhere might be desirable for later validation (4.2.2 #4)
 %    (wouldn't it be better to let a reverse proxy handle this?)
 %  - subprotocol support
 
-%  - all frames from the client must be masked (Close with 1002)
+%  - all frames from the client must be masked (6.1, #5) (Close with 1002)
 %  - all frames from the server must not be masked
 %  - unknown opcode -> 7.1.7 fail
 %  - limit frame and message size (10.4)
+%  - reassembled text frames with invalid utf-8 must be Failed (5.6 and 8.1) (7.1.7)
+%  - after decoding the opcode is called a "type", might want to rename some stuff
 
 sec_websocket_accept(Key) ->
 	base64:encode(crypto:hash(sha, [Key, ?WS_GUID])).
@@ -71,6 +71,8 @@ control_op(S, ping, Data) ->
 	gen_tcp:send(S, <<1:1, 0:3, (opcode_to_integer(pong)):4, 0:1, (byte_size(Data)):7, Data/bytes>>);
 control_op(_S, pong, _Data) ->
 	% TODO: check if pong matches, update last pong?
+	%       (it's fine to respond only to the latest one
+	%        if there's a bunch of them queued up (5.5.3))
 	ok;
 control_op(_S, close, _) ->
 	% TODO: close connection
@@ -81,6 +83,7 @@ control_op(_, _, _) ->
 handle_data(_, _Fin = 0, Op, Buf) when Op /= 0 ->
 	{Op, Buf};
 handle_data(S, _Fin = 1, Op, Buf) ->
+	io:format("decoded message: <~p> ~p~n", [Op, Buf]),
 	% TODO: send buf to handler
 	{0, <<>>}.
 
