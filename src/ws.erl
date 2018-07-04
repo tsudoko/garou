@@ -113,6 +113,10 @@ loop(Parent, S, FrameBuf, {PrevOp, MsgBuf}) ->
 		{error, closed} ->
 			Parent ! conndied,
 			ok;
+		{error, timeout} ->
+			% TODO: attempt to close the websocket connection
+			?LOG_NOTICE("timed out (stub)~n"),
+			ok;
 		{error, E} ->
 			?LOG_NOTICE("socket error (recv) ~p~n", [E]),
 			Parent ! conndied,
