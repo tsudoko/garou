@@ -121,15 +121,16 @@ decode_handshake(S) ->
 	decode_handshake(S, [], <<>>).
 decode_handshake(S, [], <<>>) ->
 	% FIXME: this might fail if the path is really long or the packet size is really small
+	{ok, Data} = gen_tcp:recv(S, 0),
 	{ok, {http_request,
 		'GET',
 		{abs_path, Path},
-		HTTPVer}, Rest} = erlang:decode_packet(http, gen_tcp:recv(S, 0), []),
+		HTTPVer}, Rest} = erlang:decode_packet(http, Data, []),
 	decode_handshake(S, [{path, Path}], Rest);
 decode_handshake(_, Params, <<"\r\n">>) -> % TODO: is it always \r\n?
 	Params;
 decode_handshake(S, Params, Buf) ->
-	Data = gen_tcp:recv(S, 0),
+	{ok, Data} = gen_tcp:recv(S, 0),
 	case erlang:decode_packet(http, Data, []) of
 		{ok, {http_header, _, Key, _, Value}, Rest} ->
 			decode_handshake(S, [{Key, Value}|Params], Rest);
