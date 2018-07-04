@@ -130,28 +130,33 @@ decode_handshake(S, [], <<>>) ->
 decode_handshake(_, Params, <<"\r\n">>) -> % TODO: is it always \r\n?
 	Params;
 decode_handshake(S, Params, Buf) ->
-	{ok, Data} = gen_tcp:recv(S, 0),
-	case erlang:decode_packet(http, Data, []) of
+	case erlang:decode_packet(httph, Buf, []) of
 		{ok, {http_header, _, Key, _, Value}, Rest} ->
 			decode_handshake(S, [{Key, Value}|Params], Rest);
 		{more, _} ->
-			decode_handshake(S, Params, <<Buf/bytes, Data/bytes>>)
+			{ok, Data} = gen_tcp:recv(S, 0),
+			decode_handshake(S, Params, <<Data/bytes, Buf/bytes>>)
 	end.
 
 ensure_contains(Key, Proplist, Value) ->
+	% FIXME: not exactly right, can give a false positive in e.g.
+	%        ensure_contains(1, [{1, "cat"}], "at")
 	true = nomatch /= string:find(string:casefold(proplists:get_value(Key, Proplist)), Value).
 
 handshake(Parent, S) ->
 	Params = decode_handshake(S),
 	% TODO: there can be multiple heeaders with the same name but
 	%       different values, concatenate them first somehow
-	ensure_contains("Connection", Params, "upgrade"),
-	ensure_contains("Upgrade", Params, "websocket"),
-	ensure_contains("Sec-Websocket-Version", Params, "13"),
+	% Multiple message-header fields with the same field-name MAY be present in a message if and only if the entire field-value for that header field is defined as a comma-separated list [i.e., #(values)]. It MUST be possible to combine the multiple header fields into one "field-name: field-value" pair, without changing the semantics of the message, by appending each subsequent field-value to the first, each separated by a comma.
+	true = proplists:is_defined('Host', Params),
+	ensure_contains('Connection', Params, "upgrade"),
+	ensure_contains('Upgrade', Params, "websocket"),
+	"13" = proplists:get_value("Sec-Websocket-Version", Params),
 	Key = proplists:get_value("Sec-Websocket-Key", Params),
 
 	% TODO: return 400 if any of the above fails
 	gen_tcp:send(S, [<<"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: websocket\r\nSec-Websocket-Accept: ">>, sec_websocket_accept(Key), <<"\r\n\r\n">>]),
+	% TODO: put 'Host', "Origin" and path somewhere
 	loop(Parent, S, <<>>, {0, <<>>}).
 
 srvloop(Maxnum, LSock) ->
