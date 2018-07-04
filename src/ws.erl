@@ -1,5 +1,6 @@
 -module(ws).
 -export([start/2, decode_frame/1]).
+-export([handshake/2]).
 
 -include_lib("kernel/include/logger.hrl").
 -define(WS_GUID, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").
@@ -116,7 +117,35 @@ loop(Parent, S, FrameBuf, {PrevOp, MsgBuf}) ->
 			ok
 	end.
 
+decode_handshake(S) ->
+	decode_handshake(S, [], <<>>).
+decode_handshake(S, [], <<>>) ->
+	% FIXME: this might fail if the path is really long or the packet size is really small
+	{ok, {http_request,
+		'GET',
+		{abs_path, Path},
+		HTTPVer}, Rest} = erlang:decode_packet(http, gen_tcp:recv(S, 0), []),
+	decode_handshake(S, [{path, Path}], Rest);
+decode_handshake(_, Params, <<"\r\n">>) -> % TODO: is it always \r\n?
+	Params;
+decode_handshake(S, Params, Buf) ->
+	Data = gen_tcp:recv(S, 0),
+	case erlang:decode_packet(http, Data, []) of
+		{ok, {http_header, _, Key, _, Value}, Rest} ->
+			decode_handshake(S, [{Key, Value}|Params], Rest);
+		{more, _} ->
+			decode_handshake(S, Params, <<Buf/bytes, Data/bytes>>)
+	end.
+
 handshake(Parent, S) ->
+	Params = decode_handshake(S),
+	true = nomatch /= string:find(proplists:get_value("Connection", Params), "upgrade"),
+	true = nomatch /= string:find(proplists:get_value("Upgrade", Params), "websocket"),
+	true = nomatch /= string:find(proplists:get_value("Sec-Websocket-Version", Params), "13"),
+	Key = proplists:get_value("Sec-Websocket-Key", Params),
+
+	% TODO: return 400 if any of the above fails
+	gen_tcp:send(S, [<<"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: websocket\r\nSec-Websocket-Accept: ">>, sec_websocket_accept(Key), <<"\r\n\r\n">>]),
 	loop(Parent, S, <<>>, {0, <<>>}).
 
 srvloop(Maxnum, LSock) ->
