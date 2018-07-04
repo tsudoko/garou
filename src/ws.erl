@@ -30,7 +30,7 @@
 %  - unknown opcode -> 7.1.7 fail
 %  - limit frame and message size (10.4)
 
-%  - handle control frames in this module, pass everything else to the custom handler
+%  - TCP timeouts (inf by default)
 
 sec_websocket_accept(Key) ->
 	base64:encode(crypto:hash(sha, [Key, ?WS_GUID])).
@@ -93,7 +93,7 @@ loop_handleframe(Parent, S, _, _, {PrevOp, MsgBuf}, {Fin, {FType, Opcode}, MaskK
 	NewOp = case Opcode of 0 -> PrevOp; X -> X end,
 	control_op(S, Opcode, NewData),
 	loop(Parent, S, <<>>, handle_data(S, Fin, NewOp, <<MsgBuf, NewData/bytes>>));
-loop_handleframe(S, FrameBuf, NewF, _, {more, _}) ->
+loop_handleframe(Parent, S, FrameBuf, NewF, _, {more, _}) ->
 	loop(Parent, S, <<FrameBuf/bytes, NewF/bytes>>, {0, <<>>}).
 
 loop(Parent, S, FrameBuf, {PrevOp, MsgBuf}) ->
@@ -111,20 +111,23 @@ loop(Parent, S, FrameBuf, {PrevOp, MsgBuf}) ->
 					loop(Parent, S, FrameBuf, {PrevOp, MsgBuf});
 				_ ->
 					loop_handleframe(Parent, S, FrameBuf, NewF, {PrevOp, MsgBuf}, decode_frame(<<FrameBuf/bytes, NewF/bytes>>))
-			end
+			end;
 		{tcp_closed, S} ->
 			Parent ! conndied,
 			ok
 	end.
 
+handshake(Parent, S) ->
+	loop(Parent, S, <<>>, {0, <<>>}).
+
 srvloop(Maxnum, LSock) ->
 	srvloop(Maxnum, LSock, 0).
 srvloop(Maxnum, LSock, Maxnum) ->
-	receive conndied -> srvloop(Maxnum, LSock, Num - 1) end.
+	receive conndied -> srvloop(Maxnum, LSock, Maxnum - 1) end;
 srvloop(Maxnum, LSock, Num) ->
 	case gen_tcp:accept(LSock) of
 		{ok, S} ->
-			spawn(?MODULE, loop, [self(), S, <<>>, {0, <<>>}]),
+			spawn(?MODULE, handshake, [self(), S]),
 			srvloop(Maxnum, LSock, Num + 1);
 		{error, _} = Err ->
 			?LOG_NOTICE("socket error: ~p~n", [Err]),
