@@ -78,13 +78,13 @@ decode_frame(_) ->
 	{more, undefined}.
 
 control_op(S, ping, Data) ->
+	io:format("ping'd (~p)~n", [Data]),
 	gen_tcp:send(S, <<1:1, 0:3, (opcode_to_integer(pong)):4, 0:1, (byte_size(Data)):7, Data/bytes>>);
-control_op(_S, pong, _Data) ->
-	% TODO: check if pong matches, update last pong?
-	%       (it's fine to respond only to the latest one
-	%        if there's a bunch of them queued up (5.5.3))
-	ok;
-control_op(_S, close, _) ->
+control_op(_S, pong, Data) ->
+	io:format("pong get (~p)~n", [Data]);
+control_op(S, close, <<Code:16, Data/bytes>>) ->
+	
+	io:format("client sent close (code ~p, reason ~p~n)", [Code, Data]),
 	% TODO: close connection
 	ok;
 control_op(_, _, _) ->
