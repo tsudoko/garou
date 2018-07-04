@@ -53,6 +53,12 @@ opcode_(8) -> close;
 opcode_(9) -> ping;
 opcode_(10) -> pong.
 
+opcode_to_integer(text) -> 1;
+opcode_to_integer(binary) -> 2;
+opcode_to_integer(close) -> 8;
+opcode_to_integer(ping) -> 9;
+opcode_to_integer(pong) -> 10.
+
 decode_frame(<<Fin:1, Reserved:3/bits, Op:4, 0:1, 127:7, Len:64, Payload:Len/bytes, Rest/bytes>>) ->
 	{ok, {Fin, opcode(<<Op>>), undefined, Payload}, Rest};
 decode_frame(<<Fin:1, Reserved:3/bits, Op:4, 1:1, 127:7, Len:64, MaskKey:4/bytes, Payload:Len/bytes, Rest/bytes>>) ->
@@ -64,9 +70,8 @@ decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
 decode_frame(_) ->
 	{more, undefined}.
 
-control_op(_, ping, Data) ->
-	% TODO: send pong
-	ok;
+control_op(S, ping, Data) ->
+	gen_tcp:send(S, <<1:1, 0:3, (opcode_to_integer(pong)):4, 0:1, (byte_size(Data)):7, Data/bytes>>);
 control_op(_, pong, Data) ->
 	% TODO: check if pong matches, update last pong?
 	ok;
@@ -78,7 +83,7 @@ control_op(_, _, _) ->
 
 handle_data(_, 0, Op, Buf) when Op /= 0 ->
 	{Op, Buf};
-handle_data(_, 1, Op, Buf) ->
+handle_data(S, 1, Op, Buf) ->
 	% TODO: send buf to handler
 	{0, <<>>}.
 
@@ -93,15 +98,29 @@ handle_data(_, 1, Op, Buf) ->
 % Hence, the requirement of handling control frames in the middle of a
 % fragmented message.
 
-loop({PrevOp, Buf}) ->
+loop_handleframe(S, _, _, {PrevOp, MsgBuf}, {Fin, {FType, Opcode}, MaskKey, Payload}) ->
+	NewData = unmask(MaskKey, Payload),
+	NewOp = case Opcode of 0 -> PrevOp; X -> X end,
+	control_op(S, Opcode, NewData),
+	loop(S, <<>>, handle_data(S, Fin, NewOp, <<MsgBuf, NewData/bytes>>));
+loop_handleframe(S, FrameBuf, NewF, _, {more, _}) ->
+	loop(S, <<FrameBuf/bytes, NewF/bytes>>, {0, <<>>}).
+
+loop(S, FrameBuf, {PrevOp, MsgBuf}) ->
 	receive
-		{todo, F} ->
-			% TODO: close if error happens
-			{Fin, {FType, Opcode}, MaskKey, Payload} = decode_frame(F),
-			NewData = unmask(MaskKey, Payload),
-			NewOp = case Opcode of 0 -> PrevOp; X -> X end,
-			control_op(todo, Opcode, NewData),
-			loop(handle_data(todo, Fin, NewOp, <<Buf, NewBuf/bytes>>))
+		{tcp, S, NewF} ->
+			% control frames can be sent whenever, even in the middle of
+			% a fragmented message, so we need to handle them separately
+
+			% TODO: close if error occurs
+			case decode_frame(NewF) of
+				{1, {control, Opcode}, MaskKey, Payload} ->
+					NewData = unmask(MaskKey, Payload),
+					control_op(S, Opcode, NewData),
+					loop(S, FrameBuf, {PrevOp, MsgBuf});
+				_ ->
+					loop_handleframe(S, FrameBuf, NewF, {PrevOp, MsgBuf}, decode_frame(<<FrameBuf/bytes, NewF/bytes>>))
+			end
 	end.
 
 listen(Port, WsOpts, ListenOpts) ->
