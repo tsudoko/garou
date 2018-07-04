@@ -154,7 +154,7 @@ srvloop(Maxnum, LSock, Maxnum) ->
 	receive conndied -> srvloop(Maxnum, LSock, Maxnum - 1) end;
 srvloop(Maxnum, LSock, Num) ->
 	receive
-		conndied -> srvloop(Maxnum, LSock, Maxnum - 1)
+		conndied -> srvloop(Maxnum, LSock, Num - 1)
 	after 0 ->
 		case gen_tcp:accept(LSock) of
 			{ok, S} ->
