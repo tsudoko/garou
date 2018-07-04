@@ -74,10 +74,10 @@ decode_frame(_) ->
 
 control_op(S, ping, Data) ->
 	gen_tcp:send(S, <<1:1, 0:3, (opcode_to_integer(pong)):4, 0:1, (byte_size(Data)):7, Data/bytes>>);
-control_op(_, pong, Data) ->
+control_op(_S, pong, _Data) ->
 	% TODO: check if pong matches, update last pong?
 	ok;
-control_op(_, close, _) ->
+control_op(_S, close, _) ->
 	% TODO: close connection
 	ok;
 control_op(_, _, _) ->
@@ -137,11 +137,16 @@ decode_handshake(S, Params, Buf) ->
 			decode_handshake(S, Params, <<Buf/bytes, Data/bytes>>)
 	end.
 
+ensure_contains(Key, Proplist, Value) ->
+	true = nomatch /= string:find(proplists:get_value(Key, Proplist), Value).
+
 handshake(Parent, S) ->
 	Params = decode_handshake(S),
-	true = nomatch /= string:find(proplists:get_value("Connection", Params), "upgrade"),
-	true = nomatch /= string:find(proplists:get_value("Upgrade", Params), "websocket"),
-	true = nomatch /= string:find(proplists:get_value("Sec-Websocket-Version", Params), "13"),
+	% TODO: there can be multiple heeaders with the same name but
+	%       different values, concatenate them first somehow
+	ensure_contains("Connection", Params, "upgrade"),
+	ensure_contains("Upgrade", Params, "websocket"),
+	ensure_contains("Sec-Websocket-Version", Params, "13"),
 	Key = proplists:get_value("Sec-Websocket-Key", Params),
 
 	% TODO: return 400 if any of the above fails
