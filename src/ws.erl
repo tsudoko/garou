@@ -153,13 +153,17 @@ srvloop(Maxnum, LSock) ->
 srvloop(Maxnum, LSock, Maxnum) ->
 	receive conndied -> srvloop(Maxnum, LSock, Maxnum - 1) end;
 srvloop(Maxnum, LSock, Num) ->
-	case gen_tcp:accept(LSock) of
-		{ok, S} ->
-			spawn(?MODULE, handshake, [self(), S]),
-			srvloop(Maxnum, LSock, Num + 1);
-		{error, _} = Err ->
-			?LOG_NOTICE("socket error: ~p~n", [Err]),
-			srvloop(Maxnum, LSock, Num)
+	receive
+		conndied -> srvloop(Maxnum, LSock, Maxnum - 1)
+	after 0 ->
+		case gen_tcp:accept(LSock) of
+			{ok, S} ->
+				spawn(?MODULE, handshake, [self(), S]),
+				srvloop(Maxnum, LSock, Num + 1);
+			{error, _} = Err ->
+				?LOG_NOTICE("socket error: ~p~n", [Err]),
+				srvloop(Maxnum, LSock, Num)
+		end
 	end.
 
 start(Maxnum, LPort) ->
