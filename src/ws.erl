@@ -53,18 +53,10 @@ opcode_(8) -> close;
 opcode_(9) -> ping;
 opcode_(10) -> pong.
 
-decode_frame(<<_:1, _:3, _:4, 0:1, 127:7, Len:64, P/bytes>>) when byte_size(P) < Len ->
-	{more, Len};
-decode_frame(<<_:1, _:3, _:4, 1:1, 127:7, Len:64, _:4/bytes, P/bytes>>) when byte_size(P) < Len ->
-	{more, Len};
-decode_frame(<<Fin:1, Reserved:3/bits, Op:4, 0:1, 127:7, Len:64, Payload/bytes>>) ->
-	% TODO ↓: return excess bytes of Payload if byte_size(Payload) > Len
-	Len = byte_size(Payload), % TODO: return some error? alternatively move to the pattern above
-	{ok, {Fin, opcode(<<Op>>), undefined, Payload}, undefined};
-decode_frame(<<Fin:1, Reserved:3/bits, Op:4, 1:1, 127:7, Len:64, MaskKey:4/bytes, Payload/bytes>>) ->
-	% TODO ↓: return excess bytes of Payload if byte_size(Payload) > Len
-	Len = byte_size(Payload), % TODO: return some error? alternatively move to the pattern above
-	{ok, {Fin, opcode(<<Op>>), MaskKey, Payload}, undefined};
+decode_frame(<<Fin:1, Reserved:3/bits, Op:4, 0:1, 127:7, Len:64, Payload:Len/bytes, Rest/bytes>>) ->
+	{ok, {Fin, opcode(<<Op>>), undefined, Payload}, Rest};
+decode_frame(<<Fin:1, Reserved:3/bits, Op:4, 1:1, 127:7, Len:64, MaskKey:4/bytes, Payload:Len/bytes, Rest/bytes>>) ->
+	{ok, {Fin, opcode(<<Op>>), MaskKey, Payload}, Rest};
 decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, 126:7, Len:16, Rest/bytes>>) ->
 	decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
 decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
