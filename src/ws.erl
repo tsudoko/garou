@@ -64,13 +64,23 @@ decode_frame(<<Fin:1, Reserved:3/bits, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
 decode_frame(_) ->
 	{more, undefined}.
 
-decode_message_({more, _}) ->
-	{more, undefined};
-decode_message_({ok, {Fin, Op, MaskKey, Payload}}) ->
-	% TODO: handle multiple frames (fin == 0)
-	% maaaybe TODO: unmask here instead of doing it in decode_frame/1,
-	%               would preserve frame metadata better too
+control_op(_, ping, Data) ->
+	% TODO: send pong
+	ok;
+control_op(_, pong, Data) ->
+	% TODO: check if pong matches, update last pong?
+	ok;
+control_op(_, close, _) ->
+	% TODO: close connection
+	ok;
+control_op(_, _, _) ->
 	ok.
+
+handle_data(_, 0, Op, Buf) ->
+	{Op, Buf};
+handle_data(_, 1, Op, Buf) ->
+	% TODO: send buf to handler
+	{0, <<>>}.
 
 % important details:
 %  - An endpoint MUST be capable of handling control frames in the
@@ -82,6 +92,17 @@ decode_message_({ok, {Fin, Op, MaskKey, Payload}}) ->
 % ping, for example, would be very long if behind a large message.
 % Hence, the requirement of handling control frames in the middle of a
 % fragmented message.
+
+loop({PrevOp, Buf}) ->
+	receive
+		{todo, F} ->
+			% TODO: close if error happens
+			{Fin, {FType, Opcode}, MaskKey, Payload} = decode_frame(F),
+			NewData = unmask(MaskKey, Payload),
+			NewOp = case Opcode of 0 -> PrevOp; X -> X end,
+			control_op(todo, Opcode, NewData),
+			loop(handle_data(todo, Fin, NewOp, <<Buf, NewBuf/bytes>>))
+	end.
 
 listen(Port, WsOpts, ListenOpts) ->
 	% WsOpts (all maybe): secure/ssl, resource (path) (or just accept everything and return requested path in accept/n?)
