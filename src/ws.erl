@@ -76,7 +76,7 @@ control_op(_, close, _) ->
 control_op(_, _, _) ->
 	ok.
 
-handle_data(_, 0, Op, Buf) ->
+handle_data(_, 0, Op, Buf) when Op /= 0 ->
 	{Op, Buf};
 handle_data(_, 1, Op, Buf) ->
 	% TODO: send buf to handler
