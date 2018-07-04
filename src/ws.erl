@@ -15,10 +15,7 @@
 %  - only GETs, only HTTP/1.1 or higher (4.1, 2#2 and 4.2.1, #1) (400)
 %  - non-80 (for non-ssl connections)/443 (for ssl connections) ports must be
 %    specified explicitly in the Host header (4.1, 2#4) (???)
-%  - Upgrade must include "websocket" (4.1, 2#5 and 4.2.1, #3) (400)
-%  - Connection must include "Upgrade" (4.1, 2#6 and 4.2.1, #4) (400)
 %  - Sec-Websocket-Key must be a base64-encoded 16-byte value (4.1, 2#7 and 4.2.1, #5) (400)
-%  - Sec-Websocket-Version must be 13 (4.1, 2#9 and 4.2.1, #6) (400)
 %  - the 4 headers mentioned above are required in the handshake
 %  - response must be 101, Upgrade=="websocket", Connection=="upgrade", Sec-Websocket-Accept blah (4.2.2 #5)
 %  - include sec-websocket-version in 400 responses
@@ -30,8 +27,6 @@
 %  - all frames from the server must not be masked
 %  - unknown opcode -> 7.1.7 fail
 %  - limit frame and message size (10.4)
-
-%  - TCP timeouts (inf by default)
 
 sec_websocket_accept(Key) ->
 	base64:encode(crypto:hash(sha, [Key, ?WS_GUID])).
@@ -151,7 +146,13 @@ handshake(Parent, S) ->
 	Params = decode_handshake(S),
 	% TODO: there can be multiple heeaders with the same name but
 	%       different values, concatenate them first somehow
-	% Multiple message-header fields with the same field-name MAY be present in a message if and only if the entire field-value for that header field is defined as a comma-separated list [i.e., #(values)]. It MUST be possible to combine the multiple header fields into one "field-name: field-value" pair, without changing the semantics of the message, by appending each subsequent field-value to the first, each separated by a comma.
+	% Multiple message-header fields with the same field-name MAY be present
+	% in a message if and only if the entire field-value for that header field
+	% is defined as a comma-separated list [i.e., #(values)]. It MUST be
+	% possible to combine the multiple header fields into one "field-name:
+	% field-value" pair, without changing the semantics of the message, by
+	% appending each subsequent field-value to the first, each separated by a
+	% comma.
 	true = proplists:is_defined('Host', Params),
 	ensure_contains('Connection', Params, "upgrade"),
 	ensure_contains('Upgrade', Params, "websocket"),
