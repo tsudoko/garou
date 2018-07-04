@@ -84,10 +84,10 @@ handle_data(S, 1, Op, Buf) ->
 	% TODO: send buf to handler
 	{0, <<>>}.
 
-loop_handleframe(Parent, S, _, _, {PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey, Payload}}) ->
+loop_handleframe(Parent, S, _, _, {PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey, Payload}, Rest}) ->
 	NewData = unmask(MaskKey, Payload),
 	NewOp = case Opcode of 0 -> PrevOp; X -> X end,
-	loop(Parent, S, <<>>, handle_data(S, Fin, NewOp, <<MsgBuf, NewData/bytes>>));
+	loop(Parent, S, Rest, handle_data(S, Fin, NewOp, <<MsgBuf/bytes, NewData/bytes>>));
 loop_handleframe(Parent, S, FrameBuf, NewF, _, {more, _}) ->
 	loop(Parent, S, <<FrameBuf/bytes, NewF/bytes>>, {0, <<>>}).
 
