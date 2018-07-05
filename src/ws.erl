@@ -121,6 +121,7 @@ loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf}) ->
 					loop_handleframe(Parent, S, Handler, FrameBuf, NewF, {PrevOp, MsgBuf}, decode_frame(<<FrameBuf/bytes, NewF/bytes>>))
 			end;
 		{error, closed} ->
+			Handler ! ws_closed,
 			Parent ! conndied,
 			ok;
 		{error, timeout} ->
@@ -128,10 +129,12 @@ loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf}) ->
 			?LOG_NOTICE("timed out~n"),
 			gen_tcp:shutdown(S, read_write),
 			gen_tcp:close(S),
+			Handler ! ws_closed,
 			Parent ! conndied,
 			ok;
 		{error, E} ->
 			?LOG_NOTICE("socket error (recv) ~p~n", [E]),
+			Handler ! ws_closed,
 			Parent ! conndied,
 			ok
 	end.
