@@ -1,6 +1,6 @@
 -module(ws).
 -export([start/3, decode_frame/1]).
--export([handshake/2]).
+-export([handshake/3]).
 
 -include_lib("kernel/include/logger.hrl").
 -define(WS_GUID, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").
@@ -37,6 +37,8 @@
 %    - really large frames
 %    - really large messages
 %    - text frames with non-utf8 data or invalid utf-8
+%    - a bunch of invalid handshakes
+%    - really large handshake?
 
 sec_websocket_accept(Key) ->
 	base64:encode(crypto:hash(sha, [Key, ?WS_GUID])).
@@ -90,24 +92,22 @@ control_op(S, close, <<Code:16, Data/bytes>>) ->
 control_op(_, _, _) ->
 	ok.
 
-handle_data(_, _Fin = 0, Op, Buf) when Op /= 0 ->
+handle_data(_, _, _Fin = 0, Op, Buf) when Op /= 0 ->
 	{Op, Buf};
-handle_data(S, _Fin = 1, Op, Buf) ->
-	io:format("decoded message: <~p> ~p~n", [Op, Buf]),
-	% TODO: send buf to handler
+handle_data(S, Handler, _Fin = 1, Op, Buf) ->
+	Handler ! {ws_message, self(), {Op, Buf}},
 	{0, <<>>}.
 
-loop_handleframe(Parent, S, _, _, {PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey, Payload}, Rest}) ->
+loop_handleframe(Parent, S, Handler, _, _, {PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey, Payload}, Rest}) ->
 	NewData = unmask(MaskKey, Payload),
 	NewOp = case Opcode of 0 -> PrevOp; X -> X end,
-	loop(Parent, S, Rest, handle_data(S, Fin, NewOp, <<MsgBuf/bytes, NewData/bytes>>));
-loop_handleframe(Parent, S, FrameBuf, NewF, _, {more, _}) ->
-	loop(Parent, S, <<FrameBuf/bytes, NewF/bytes>>, {0, <<>>}).
+	loop(Parent, S, Handler, Rest, handle_data(S, Handler, Fin, NewOp, <<MsgBuf/bytes, NewData/bytes>>));
+loop_handleframe(Parent, S, Handler, FrameBuf, NewF, _, {more, _}) ->
+	loop(Parent, S, Handler, <<FrameBuf/bytes, NewF/bytes>>, {0, <<>>}).
 
-loop(Parent, S, FrameBuf, {PrevOp, MsgBuf}) ->
+loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf}) ->
 	case gen_tcp:recv(S, 0, 5000) of
 		{ok, NewF} ->
-			io:format("received ~p~n", [NewF]),
 			% control frames can be sent whenever, even in the middle of
 			% a fragmented message, so we need to handle them separately
 
@@ -116,9 +116,9 @@ loop(Parent, S, FrameBuf, {PrevOp, MsgBuf}) ->
 				{ok, {1, {control, Opcode}, MaskKey, Payload}} ->
 					NewData = unmask(MaskKey, Payload),
 					control_op(S, Opcode, NewData),
-					loop(Parent, S, FrameBuf, {PrevOp, MsgBuf});
+					loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf});
 				_ ->
-					loop_handleframe(Parent, S, FrameBuf, NewF, {PrevOp, MsgBuf}, decode_frame(<<FrameBuf/bytes, NewF/bytes>>))
+					loop_handleframe(Parent, S, Handler, FrameBuf, NewF, {PrevOp, MsgBuf}, decode_frame(<<FrameBuf/bytes, NewF/bytes>>))
 			end;
 		{error, closed} ->
 			Parent ! conndied,
@@ -162,7 +162,7 @@ ensure_contains(Key, Proplist, Value) ->
 	%        ensure_contains(1, [{1, "cat"}], "at")
 	true = nomatch /= string:find(string:casefold(proplists:get_value(Key, Proplist)), Value).
 
-handshake(Parent, S) ->
+handshake(Parent, S, Handler) ->
 	Params = decode_handshake(S),
 	% TODO: there can be multiple heeaders with the same name but
 	%       different values, concatenate them first somehow
@@ -181,31 +181,36 @@ handshake(Parent, S) ->
 
 	% TODO: return 400 if any of the above fails
 	gen_tcp:send(S, [<<"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: websocket\r\nSec-Websocket-Accept: ">>, sec_websocket_accept(Key), <<"\r\n\r\n">>]),
-	% TODO: put 'Host', "Origin" and path somewhere
-	loop(Parent, S, <<>>, {0, <<>>}).
+	Handler ! {ws_handshake, self(), {
+		proplists:get_value('Host', Params),
+		proplists:get_value(path, Params),
+		proplists:get_value("Origin", Params)}},
+	loop(Parent, S, Handler, <<>>, {0, <<>>}).
 
-srvloop(Maxnum, LSock) ->
-	srvloop(Maxnum, LSock, 0).
-srvloop(Maxnum, LSock, Maxnum) ->
-	receive conndied -> srvloop(Maxnum, LSock, Maxnum - 1) end;
-srvloop(Maxnum, LSock, Num) ->
+srvloop(Maxnum, LSock, Handler) ->
+	srvloop_(Maxnum, LSock, Handler, 0).
+srvloop_(Maxnum, LSock, Handler, Maxnum) ->
+	receive conndied -> srvloop_(Maxnum, LSock, Handler, Maxnum - 1) end;
+srvloop_(Maxnum, LSock, Handler, Num) ->
 	receive
 		conndied -> srvloop(Maxnum, LSock, Num - 1)
 	after 0 ->
 		case gen_tcp:accept(LSock) of
 			{ok, S} ->
-				spawn(?MODULE, handshake, [self(), S]),
-				srvloop(Maxnum, LSock, Num + 1);
+				{M, F, A} = Handler,
+				HPid = spawn(M, F, A),
+				spawn(?MODULE, handshake, [self(), S, HPid]),
+				srvloop_(Maxnum, LSock, Handler, Num + 1);
 			{error, E} ->
 				?LOG_NOTICE("socket error (accept): ~p~n", [E]),
-				srvloop(Maxnum, LSock, Num)
+				srvloop_(Maxnum, LSock, Handler, Num)
 		end
 	end.
 
 start(Maxnum, LPort, Handler) ->
 	case gen_tcp:listen(LPort, [binary, {active, false}]) of
 		{ok, LS} ->
-			srvloop(Maxnum, LS),
+			srvloop(Maxnum, LS, Handler),
 			{ok, Port} = inet:port(LS),
 			Port;
 		{error, _} = Err ->
