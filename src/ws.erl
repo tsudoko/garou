@@ -106,8 +106,9 @@ loop_handleframe(Parent, S, Handler, FrameBuf, NewF, _, {more, _}) ->
 	loop(Parent, S, Handler, <<FrameBuf/bytes, NewF/bytes>>, {0, <<>>}).
 
 loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf}) ->
-	case gen_tcp:recv(S, 0, 5000) of
-		{ok, NewF} ->
+	inet:setopts(S, [{active, once}]),
+	receive
+		{tcp, S, NewF} ->
 			% control frames can be sent whenever, even in the middle of
 			% a fragmented message, so we need to handle them separately
 
@@ -120,19 +121,11 @@ loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf}) ->
 				_ ->
 					loop_handleframe(Parent, S, Handler, FrameBuf, NewF, {PrevOp, MsgBuf}, decode_frame(<<FrameBuf/bytes, NewF/bytes>>))
 			end;
-		{error, closed} ->
+		{tcp_closed, S} ->
 			Handler ! ws_closed,
 			Parent ! conndied,
 			ok;
-		{error, timeout} ->
-			% TODO: attempt to close the websocket connection (with handshake etc)
-			?LOG_NOTICE("timed out~n"),
-			gen_tcp:shutdown(S, read_write),
-			gen_tcp:close(S),
-			Handler ! ws_closed,
-			Parent ! conndied,
-			ok;
-		{error, E} ->
+		{tcp_error, E} ->
 			?LOG_NOTICE("socket error (recv) ~p~n", [E]),
 			Handler ! ws_closed,
 			Parent ! conndied,
@@ -202,7 +195,8 @@ srvloop_(Maxnum, LSock, Handler, Num) ->
 			{ok, S} ->
 				{M, F, A} = Handler,
 				HPid = spawn(M, F, A),
-				spawn(?MODULE, handshake, [self(), S, HPid]),
+				CPid = spawn(?MODULE, handshake, [self(), S, HPid]),
+				ok = gen_tcp:controlling_process(S, CPid),
 				srvloop_(Maxnum, LSock, Handler, Num + 1);
 			{error, E} ->
 				?LOG_NOTICE("socket error (accept): ~p~n", [E]),
