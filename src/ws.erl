@@ -79,6 +79,13 @@ decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
 decode_frame(_) ->
 	{more, undefined}.
 
+encode_frame(Op, Msg) when byte_size(Msg) =< 125 ->
+	<<1:1, 0:3, (opcode_to_integer(Op)):4, 0:1, (byte_size(Msg)):7, Msg/bytes>>;
+encode_frame(Op, Msg) when byte_size(Msg) =< 65535 ->
+	<<1:1, 0:3, (opcode_to_integer(Op)):4, 0:1, 126:7, (byte_size(Msg)):16, Msg/bytes>>;
+encode_frame(Op, Msg) when byte_size(Msg) =< 18446744073709551615 ->
+	<<1:1, 0:3, (opcode_to_integer(Op)):4, 0:1, 127:7, (byte_size(Msg)):64, Msg/bytes>>.
+
 control_op(S, ping, Data) ->
 	io:format("ping'd (~p)~n", [Data]),
 	gen_tcp:send(S, <<1:1, 0:3, (opcode_to_integer(pong)):4, 0:1, (byte_size(Data)):7, Data/bytes>>);
@@ -108,6 +115,9 @@ loop_handleframe(Parent, S, Handler, FrameBuf, NewF, _, {more, _}) ->
 loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf}) ->
 	inet:setopts(S, [{active, once}]),
 	receive
+		{ws_message, {Op, Msg}} ->
+			ok = gen_tcp:send(S, encode_frame(Op, Msg)),
+			loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf});
 		{tcp, S, NewF} ->
 			% control frames can be sent whenever, even in the middle of
 			% a fragmented message, so we need to handle them separately
