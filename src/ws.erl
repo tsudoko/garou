@@ -19,8 +19,7 @@
 %    specified explicitly in the Host header (4.1, 2#4) (???)
 %  - Sec-Websocket-Key must be a base64-encoded 16-byte value (4.1, 2#7 and 4.2.1, #5) (400)
 %  - include sec-websocket-version in 400 responses
-%  - storing the origin somewhere might be desirable for later validation (4.2.2 #4)
-%    (wouldn't it be better to let a reverse proxy handle this?)
+%  - parse the Forwarded header (RFC 7239), set secure flag if proto=https
 %  - subprotocol support
 
 %  - all frames from the client must be masked (6.1, #5) (Close with 1002)
@@ -86,17 +85,17 @@ encode_frame(Op, Msg) when byte_size(Msg) =< 65535 ->
 encode_frame(Op, Msg) when byte_size(Msg) =< 18446744073709551615 ->
 	<<1:1, 0:3, (opcode_to_integer(Op)):4, 0:1, 127:7, (byte_size(Msg)):64, Msg/bytes>>.
 
-control_op(S, ping, Data) ->
+handle_control(S, ping, Data) ->
 	io:format("ping'd (~p)~n", [Data]),
 	gen_tcp:send(S, <<1:1, 0:3, (opcode_to_integer(pong)):4, 0:1, (byte_size(Data)):7, Data/bytes>>);
-control_op(_S, pong, Data) ->
+handle_control(_, pong, Data) ->
+	% TODO: send pings, timeout if there's no pong in time
 	io:format("pong get (~p)~n", [Data]);
-control_op(S, close, <<Code:16, Data/bytes>>) ->
-	
+handle_control(S, close, <<Code:16, Data/bytes>>) ->
 	io:format("client sent close (code ~p, reason ~p~n)", [Code, Data]),
 	% TODO: close connection
 	ok;
-control_op(_, _, _) ->
+handle_control(_, _, _) ->
 	ok.
 
 handle_data(_, _Fin = 0, Op, Buf) when Op /= 0 ->
@@ -105,18 +104,6 @@ handle_data(Handler, _Fin = 1, Op, Buf) ->
 	Handler ! {ws_message, self(), {Op, Buf}},
 	{0, <<>>}.
 
-handle_frame(S, _, {_, PrevOp, MsgBuf}, {ok, {1, {control, Opcode}, MaskKey, Payload}, Rest}) ->
-	NewData = unmask(MaskKey, Payload),
-	control_op(S, Opcode, NewData),
-	{Rest, PrevOp, MsgBuf};
-handle_frame(_, Handler, {_, PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey, Payload}, Rest}) ->
-	NewData = unmask(MaskKey, Payload),
-	NewOp = case Opcode of 0 -> PrevOp; X -> X end,
-	{NOp, NMBuf} = handle_data(Handler, Fin, NewOp, <<MsgBuf/bytes, NewData/bytes>>),
-	{Rest, NOp, NMBuf};
-handle_frame(_, _, Bufs, {more, _}) ->
-	Bufs.
-
 loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 	inet:setopts(S, [{active, once}]),
 	receive
@@ -124,13 +111,20 @@ loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 			ok = gen_tcp:send(S, encode_frame(Op, Msg)),
 			loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf});
 		{tcp, S, Bytes} ->
-			% control frames can be sent whenever, even in the middle of
-			% a fragmented message, so we need to handle them separately
-
 			NewBuf = <<FrameBuf/bytes, Bytes/bytes>>,
 			% TODO: close if decode_frame/1 crashes
-			Decoded = decode_frame(NewBuf),
-			loop(Parent, S, Handler, handle_frame(S, Handler, {NewBuf, PrevOp, MsgBuf}, Decoded));
+			case decode_frame(NewBuf) of
+				{ok, Frame = {Fin, {_, Opcode}, Key, Payload}, Rest} ->
+					Data = unmask(Key, Payload),
+					handle_control(S, Opcode, Data),
+					NewOp = case Opcode of 0 -> PrevOp; X -> X end,
+					NewMsgBuf = <<MsgBuf/bytes, Data/bytes>>,
+					% TODO: maybe don't expose control frames
+					{NextOp, NextMsgBuf} = handle_data(Handler, Fin, NewOp, NewMsgBuf),
+					loop(Parent, S, Handler, {Rest, NextOp, NextMsgBuf});
+				{more, _} ->
+					loop(Parent, S, Handler, {NewBuf, PrevOp, MsgBuf})
+			end;
 		{tcp_closed, S} ->
 			Handler ! ws_closed,
 			Parent ! conndied,
