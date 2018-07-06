@@ -114,8 +114,8 @@ handle_frame(_, Handler, {_, PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey
 	NewOp = case Opcode of 0 -> PrevOp; X -> X end,
 	{NOp, NMBuf} = handle_data(Handler, Fin, NewOp, <<MsgBuf/bytes, NewData/bytes>>),
 	{Rest, NOp, NMBuf};
-handle_frame(_, _, {Buf, _, _}, {more, _}) ->
-	{Buf, 0, <<>>}.
+handle_frame(_, _, Bufs, {more, _}) ->
+	Bufs.
 
 loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 	inet:setopts(S, [{active, once}]),
