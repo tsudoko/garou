@@ -54,8 +54,8 @@ unmask(Key, Data, R) when byte_size(Key) > byte_size(Data) ->
 	<<CutKey:Datalen/bytes, _/bytes>> = Key,
 	<<R/bytes, (crypto:exor(Data, CutKey))/bytes>>.
 
-opcode(Bop = <<0:1, _/bits>>) -> <<Op>> = Bop, {data, opcode_(Op)};
-opcode(Bop = <<1:1, _/bits>>) -> <<Op>> = Bop, {control, opcode_(Op)}.
+opcode(Bop = <<0:1, _:3>>) -> <<Op:4>> = Bop, {data, opcode_(Op)};
+opcode(Bop = <<1:1, _:3>>) -> <<Op:4>> = Bop, {control, opcode_(Op)}.
 opcode_(1) -> text;
 opcode_(2) -> binary;
 opcode_(8) -> close;
@@ -69,9 +69,9 @@ opcode_to_integer(ping) -> 9;
 opcode_to_integer(pong) -> 10.
 
 decode_frame(<<Fin:1, _:3/bits, Op:4, 0:1, 127:7, Len:64, Payload:Len/bytes, Rest/bytes>>) ->
-	{ok, {Fin, opcode(<<Op>>), undefined, Payload}, Rest};
+	{ok, {Fin, opcode(<<Op:4>>), undefined, Payload}, Rest};
 decode_frame(<<Fin:1, _:3/bits, Op:4, 1:1, 127:7, Len:64, MaskKey:4/bytes, Payload:Len/bytes, Rest/bytes>>) ->
-	{ok, {Fin, opcode(<<Op>>), MaskKey, Payload}, Rest};
+	{ok, {Fin, opcode(<<Op:4>>), MaskKey, Payload}, Rest};
 decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, 126:7, Len:16, Rest/bytes>>) ->
 	decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
 decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, Len:7, Rest/bytes>>) when Len =< 125 ->
