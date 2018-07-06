@@ -105,33 +105,32 @@ handle_data(Handler, _Fin = 1, Op, Buf) ->
 	Handler ! {ws_message, self(), {Op, Buf}},
 	{0, <<>>}.
 
-loop_handleframe(Parent, S, Handler, _, {PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey, Payload}, Rest}) ->
+handle_frame(S, _, {_, PrevOp, MsgBuf}, {ok, {1, {control, Opcode}, MaskKey, Payload}, Rest}) ->
+	NewData = unmask(MaskKey, Payload),
+	control_op(S, Opcode, NewData),
+	{Rest, PrevOp, MsgBuf};
+handle_frame(_, Handler, {_, PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey, Payload}, Rest}) ->
 	NewData = unmask(MaskKey, Payload),
 	NewOp = case Opcode of 0 -> PrevOp; X -> X end,
-	loop(Parent, S, Handler, Rest, handle_data(Handler, Fin, NewOp, <<MsgBuf/bytes, NewData/bytes>>));
-loop_handleframe(Parent, S, Handler, Buf, _, {more, _}) ->
-	loop(Parent, S, Handler, Buf, {0, <<>>}).
+	{NOp, NMBuf} = handle_data(Handler, Fin, NewOp, <<MsgBuf/bytes, NewData/bytes>>),
+	{Rest, NOp, NMBuf};
+handle_frame(_, _, {Buf, _, _}, {more, _}) ->
+	{Buf, 0, <<>>}.
 
-loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf}) ->
+loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 	inet:setopts(S, [{active, once}]),
 	receive
 		{ws_message, {Op, Msg}} ->
 			ok = gen_tcp:send(S, encode_frame(Op, Msg)),
-			loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf});
+			loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf});
 		{tcp, S, Bytes} ->
 			% control frames can be sent whenever, even in the middle of
 			% a fragmented message, so we need to handle them separately
 
 			NewBuf = <<FrameBuf/bytes, Bytes/bytes>>,
 			% TODO: close if decode_frame/1 crashes
-			case decode_frame(NewBuf) of
-				{ok, {1, {control, Opcode}, MaskKey, Payload}, Rest} ->
-					NewData = unmask(MaskKey, Payload),
-					control_op(S, Opcode, NewData),
-					loop(Parent, S, Handler, Rest, {PrevOp, MsgBuf});
-				DataFrame ->
-					loop_handleframe(Parent, S, Handler, NewBuf, {PrevOp, MsgBuf}, DataFrame)
-			end;
+			Decoded = decode_frame(NewBuf),
+			loop(Parent, S, Handler, handle_frame(S, Handler, {NewBuf, PrevOp, MsgBuf}, Decoded));
 		{tcp_closed, S} ->
 			Handler ! ws_closed,
 			Parent ! conndied,
@@ -192,7 +191,7 @@ handshake(Parent, S, Handler) ->
 		proplists:get_value('Host', Params),
 		proplists:get_value(path, Params),
 		proplists:get_value("Origin", Params)}},
-	loop(Parent, S, Handler, <<>>, {0, <<>>}).
+	loop(Parent, S, Handler, {<<>>, 0, <<>>}).
 
 srvloop(Maxnum, LSock, Handler) ->
 	srvloop_(Maxnum, LSock, Handler, 0).
