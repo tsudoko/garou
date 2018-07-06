@@ -74,7 +74,7 @@ decode_frame(<<Fin:1, _:3/bits, Op:4, 1:1, 127:7, Len:64, MaskKey:4/bytes, Paylo
 	{ok, {Fin, opcode(<<Op>>), MaskKey, Payload}, Rest};
 decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, 126:7, Len:16, Rest/bytes>>) ->
 	decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
-decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, Len:7, Rest/bytes>>) ->
+decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, Len:7, Rest/bytes>>) when Len =< 125 ->
 	decode_frame(<<Fin:1, R:3/bits, Op:4, Mask:1, 127:7, Len:64, Rest/bytes>>);
 decode_frame(_) ->
 	{more, undefined}.
@@ -105,12 +105,12 @@ handle_data(S, Handler, _Fin = 1, Op, Buf) ->
 	Handler ! {ws_message, self(), {Op, Buf}},
 	{0, <<>>}.
 
-loop_handleframe(Parent, S, Handler, _, _, {PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey, Payload}, Rest}) ->
+loop_handleframe(Parent, S, Handler, _, {PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey, Payload}, Rest}) ->
 	NewData = unmask(MaskKey, Payload),
 	NewOp = case Opcode of 0 -> PrevOp; X -> X end,
 	loop(Parent, S, Handler, Rest, handle_data(S, Handler, Fin, NewOp, <<MsgBuf/bytes, NewData/bytes>>));
-loop_handleframe(Parent, S, Handler, FrameBuf, NewF, _, {more, _}) ->
-	loop(Parent, S, Handler, <<FrameBuf/bytes, NewF/bytes>>, {0, <<>>}).
+loop_handleframe(Parent, S, Handler, Buf, _, {more, _}) ->
+	loop(Parent, S, Handler, Buf, {0, <<>>}).
 
 loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf}) ->
 	inet:setopts(S, [{active, once}]),
@@ -118,18 +118,19 @@ loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf}) ->
 		{ws_message, {Op, Msg}} ->
 			ok = gen_tcp:send(S, encode_frame(Op, Msg)),
 			loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf});
-		{tcp, S, NewF} ->
+		{tcp, S, Bytes} ->
 			% control frames can be sent whenever, even in the middle of
 			% a fragmented message, so we need to handle them separately
 
-			% TODO: close if error occurs
-			case decode_frame(NewF) of
-				{ok, {1, {control, Opcode}, MaskKey, Payload}} ->
+			NewBuf = <<FrameBuf/bytes, Bytes/bytes>>,
+			% TODO: close if decode_frame/1 crashes
+			case decode_frame(NewBuf) of
+				{ok, {1, {control, Opcode}, MaskKey, Payload}, Rest} ->
 					NewData = unmask(MaskKey, Payload),
 					control_op(S, Opcode, NewData),
-					loop(Parent, S, Handler, FrameBuf, {PrevOp, MsgBuf});
-				_ ->
-					loop_handleframe(Parent, S, Handler, FrameBuf, NewF, {PrevOp, MsgBuf}, decode_frame(<<FrameBuf/bytes, NewF/bytes>>))
+					loop(Parent, S, Handler, Rest, {PrevOp, MsgBuf});
+				DataFrame ->
+					loop_handleframe(Parent, S, Handler, NewBuf, {PrevOp, MsgBuf}, DataFrame)
 			end;
 		{tcp_closed, S} ->
 			Handler ! ws_closed,
