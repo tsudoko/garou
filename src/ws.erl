@@ -99,16 +99,16 @@ control_op(S, close, <<Code:16, Data/bytes>>) ->
 control_op(_, _, _) ->
 	ok.
 
-handle_data(_, _, _Fin = 0, Op, Buf) when Op /= 0 ->
+handle_data(_, _Fin = 0, Op, Buf) when Op /= 0 ->
 	{Op, Buf};
-handle_data(S, Handler, _Fin = 1, Op, Buf) ->
+handle_data(Handler, _Fin = 1, Op, Buf) ->
 	Handler ! {ws_message, self(), {Op, Buf}},
 	{0, <<>>}.
 
 loop_handleframe(Parent, S, Handler, _, {PrevOp, MsgBuf}, {ok, {Fin, {data, Opcode}, MaskKey, Payload}, Rest}) ->
 	NewData = unmask(MaskKey, Payload),
 	NewOp = case Opcode of 0 -> PrevOp; X -> X end,
-	loop(Parent, S, Handler, Rest, handle_data(S, Handler, Fin, NewOp, <<MsgBuf/bytes, NewData/bytes>>));
+	loop(Parent, S, Handler, Rest, handle_data(Handler, Fin, NewOp, <<MsgBuf/bytes, NewData/bytes>>));
 loop_handleframe(Parent, S, Handler, Buf, _, {more, _}) ->
 	loop(Parent, S, Handler, Buf, {0, <<>>}).
 
