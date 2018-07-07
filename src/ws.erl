@@ -97,7 +97,7 @@ handle_control(_, _, pong, Data) ->
 	io:format("pong get (~p)~n", [Data]);
 handle_control(S, Handler, close, Data) ->
 	gen_tcp:send(S, encode_frame(close, Data)),
-	Handler ! {ws_closed, {close, status(Data)}};
+	Handler:close({close, status(Data)});
 handle_control(_, _, _, _) ->
 	ok.
 
@@ -106,7 +106,7 @@ handle_data(_, _Fin = 0, _, _) ->
 handle_data(_, _, control, _) ->
 	ok;
 handle_data(Handler, _Fin = 1, data, Message) ->
-	Handler ! {ws_message, self(), Message}.
+	Handler:message(Message).
 
 clear_msgbufs(0, Bufs) ->
 	Bufs;
@@ -135,12 +135,12 @@ loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 					loop(Parent, S, Handler, {NewBuf, PrevOp, MsgBuf})
 			end;
 		{tcp_closed, S} ->
-			Handler ! {ws_closed, tcp_closed},
+			Handler:close(tcp_closed),
 			Parent ! conndied,
 			ok;
 		{tcp_error, S, E} ->
 			?LOG_NOTICE("socket error (recv) ~p~n", [E]),
-			Handler ! {ws_closed, {tcp_error, E}},
+			Handler:close({tcp_error, E}),
 			Parent ! conndied,
 			ok
 	end.
@@ -191,10 +191,10 @@ handshake(Parent, S, Handler) ->
 
 	% TODO: return 400 if any of the above (including decode_handshake/1) fails
 	gen_tcp:send(S, [<<"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: websocket\r\nSec-Websocket-Accept: ">>, sec_websocket_accept(Key), <<"\r\n\r\n">>]),
-	Handler ! {ws_handshake, self(), {
+	Handler:handshake({
 		proplists:get_value('Host', Params),
 		proplists:get_value(path, Params),
-		proplists:get_value("Origin", Params)}},
+		proplists:get_value("Origin", Params)}),
 	loop(Parent, S, Handler, {<<>>, 0, <<>>}).
 
 srvloop(Maxnum, LSock, Handler) ->
@@ -207,9 +207,7 @@ srvloop_(Maxnum, LSock, Handler, Num) ->
 	after 0 ->
 		case gen_tcp:accept(LSock) of
 			{ok, S} ->
-				{M, F, A} = Handler,
-				HPid = spawn(M, F, A),
-				CPid = spawn(?MODULE, handshake, [self(), S, HPid]),
+				CPid = spawn(?MODULE, handshake, [self(), S, Handler]),
 				ok = gen_tcp:controlling_process(S, CPid),
 				srvloop_(Maxnum, LSock, Handler, Num + 1);
 			{error, E} ->
