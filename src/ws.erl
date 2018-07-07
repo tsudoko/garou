@@ -2,9 +2,9 @@
 -export([start/3, send/3]).
 -export([handshake/3]).
 
--callback handshake(S :: term(), Params :: tuple()) -> term().
--callback message(S :: term(), Message :: tuple()) -> term().
--callback close(S :: term(), Reason :: atom() | tuple()) -> term().
+-callback handshake(State :: tuple()) -> term().
+-callback message(State :: tuple(), Message :: tuple()) -> term().
+-callback close(State :: tuple(), Reason :: atom() | tuple()) -> term().
 
 -include_lib("kernel/include/logger.hrl").
 -define(WS_GUID, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").
@@ -93,15 +93,15 @@ status(<<>>) ->
 status(<<Code:16, Data/bytes>>) ->
 	{Code, Data}.
 
-handle_control(S, _, ping, Data) ->
+handle_control({S, _}, _, ping, Data) ->
 	io:format("ping'd (~p)~n", [Data]),
 	gen_tcp:send(S, <<1:1, 0:3, (opcode_to_integer(pong)):4, 0:1, (byte_size(Data)):7, Data/bytes>>);
 handle_control(_, _, pong, Data) ->
 	% TODO: send pings, timeout if there's no pong in time
 	io:format("pong get (~p)~n", [Data]);
-handle_control(S, Handler, close, Data) ->
+handle_control(State = {S, _}, Handler, close, Data) ->
 	gen_tcp:send(S, encode_frame(close, Data)),
-	Handler:close(S, {close, status(Data)});
+	Handler:close(State, {close, status(Data)});
 handle_control(_, _, _, _) ->
 	ok.
 
@@ -109,45 +109,45 @@ handle_data(_, _, _Fin = 0, _, _) ->
 	ok;
 handle_data(_, _, _, control, _) ->
 	ok;
-handle_data(S, Handler, _Fin = 1, data, Message) ->
-	Handler:message(S, Message).
+handle_data(State, Handler, _Fin = 1, data, Message) ->
+	Handler:message(State, Message).
 
 clear_msgbufs(0, Bufs) ->
 	Bufs;
 clear_msgbufs(1, _) ->
 	{0, <<>>}.
 
-send(S, Type, Msg) ->
+send({S, _}, Type, Msg) ->
 	gen_tcp:send(S, encode_frame(Type, Msg)).
 
-loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
+loop(Parent, State = {S, _}, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 	inet:setopts(S, [{active, once}]),
 	receive
 		{ws_message, {Op, Msg}} ->
 			ok = gen_tcp:send(S, encode_frame(Op, Msg)),
-			loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf});
+			loop(Parent, State, Handler, {FrameBuf, PrevOp, MsgBuf});
 		{tcp, S, Bytes} ->
 			NewBuf = <<FrameBuf/bytes, Bytes/bytes>>,
 			% TODO: close if decode_frame/1 crashes
 			case decode_frame(NewBuf) of
 				{ok, {Fin, {T, Opcode}, Key, Payload}, Rest} ->
 					Data = unmask(Key, Payload),
-					handle_control(S, Handler, Opcode, Data),
+					handle_control(State, Handler, Opcode, Data),
 					NewOp = case Opcode of 0 -> PrevOp; X -> X end,
 					NewMsgBuf = <<MsgBuf/bytes, Data/bytes>>,
-					handle_data(S, Handler, Fin, T, {NewOp, NewMsgBuf}),
+					handle_data(State, Handler, Fin, T, {NewOp, NewMsgBuf}),
 					{NextOp, NextMsgBuf} = clear_msgbufs(Fin, {NewOp, NewMsgBuf}),
-					loop(Parent, S, Handler, {Rest, NextOp, NextMsgBuf});
+					loop(Parent, State, Handler, {Rest, NextOp, NextMsgBuf});
 				{more, _} ->
-					loop(Parent, S, Handler, {NewBuf, PrevOp, MsgBuf})
+					loop(Parent, State, Handler, {NewBuf, PrevOp, MsgBuf})
 			end;
 		{tcp_closed, S} ->
-			Handler:close(S, tcp_closed),
+			Handler:close(State, tcp_closed),
 			Parent ! conndied,
 			ok;
 		{tcp_error, S, E} ->
 			?LOG_NOTICE("socket error (recv) ~p~n", [E]),
-			Handler:close(S, {tcp_error, E}),
+			Handler:close(State, {tcp_error, E}),
 			Parent ! conndied,
 			ok
 	end.
@@ -198,11 +198,13 @@ handshake(Parent, S, Handler) ->
 
 	% TODO: return 400 if any of the above (including decode_handshake/1) fails
 	gen_tcp:send(S, [<<"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: websocket\r\nSec-Websocket-Accept: ">>, sec_websocket_accept(Key), <<"\r\n\r\n">>]),
-	Handler:handshake(S, {
+	Flags = {
 		proplists:get_value('Host', Params),
 		proplists:get_value(path, Params),
-		proplists:get_value("Origin", Params)}),
-	loop(Parent, S, Handler, {<<>>, 0, <<>>}).
+		proplists:get_value("Origin", Params)
+	},
+	Handler:handshake({S, Flags}),
+	loop(Parent, {S, Flags}, Handler, {<<>>, 0, <<>>}).
 
 srvloop(Maxnum, LSock, Handler) ->
 	srvloop_(Maxnum, LSock, Handler, 0).
