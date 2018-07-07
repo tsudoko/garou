@@ -2,6 +2,10 @@
 -export([start/3, decode_frame/1]).
 -export([handshake/3]).
 
+-callback handshake(S :: term(), Params :: tuple()) -> term().
+-callback message(S :: term(), Message :: tuple()) -> term().
+-callback close(Reason :: atom() | tuple()) -> term().
+
 -include_lib("kernel/include/logger.hrl").
 -define(WS_GUID, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").
 
