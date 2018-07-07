@@ -41,9 +41,9 @@ message_json(S, [{<<"PLine">>, PLine}|Rest]) ->
 	message_json(S, Rest);
 message_json(S, [{<<"NameChange">>, Name}|Rest]) ->
 	?MODULE ! {getclient, self(), S},
-	receive {getclient, S, _, {_, PrevName}} -> ok end,
+	receive {getclient, S, _, {Admin, PrevName}} -> ok end,
 	io:format("[~p] ~p requested name change: ~p~n", [S, PrevName, Name]),
-	?MODULE ! {setname, S, Name},
+	?MODULE ! {setclient, S, {Admin, Name}},
 	ws:send(S, text, jsx:encode(#{<<"NameChange">> => #{from => PrevName, to => Name}})),
 	message_json(S, Rest);
 message_json(S, [{<<"Cursor">>, _Cursor}|Rest]) ->
@@ -72,6 +72,10 @@ loop(Rooms, Connections) ->
 			#{Path := {Canvas, #{ID := Client}}} = Rooms,
 			Pid ! {getclient, S, Canvas, Client},
 			loop(Rooms, Connections);
+		{setclient, S = {_, {_, Path, _}}, Client} ->
+			#{S := ID} = Connections,
+			#{Path := {Canvas, Users}} = Rooms,
+			loop(Rooms#{Path => {Canvas, Users#{ID => Client}}}, Connections);
 		{delconn, S} ->
 			loop(Rooms, maps:remove(S, Connections))
 	end.
