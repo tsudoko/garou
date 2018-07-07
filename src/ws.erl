@@ -14,7 +14,6 @@
 %      (i.e. offload to some reverse proxy), that would violate 10.6, though
 %      - providing the .secure/ flag to handlers might be impossible with
 %        reverse proxies, though
-%  - only GETs, only HTTP/1.1 or higher (4.1, 2#2 and 4.2.1, #1) (400)
 %  - non-80 (for non-ssl connections)/443 (for ssl connections) ports must be
 %    specified explicitly in the Host header (4.1, 2#4) (???)
 %  - Sec-Websocket-Key must be a base64-encoded 16-byte value (4.1, 2#7 and 4.2.1, #5) (400)
@@ -145,7 +144,7 @@ decode_handshake(S, [], <<>>) ->
 		'GET',
 		{abs_path, Path},
 		HTTPVer}, Rest} = erlang:decode_packet(http, Data, []),
-	decode_handshake(S, [{path, Path}], Rest);
+	decode_handshake(S, [{path, Path}, {http_ver, HTTPVer}], Rest);
 decode_handshake(_, Params, <<"\r\n">>) -> % TODO: is it always \r\n?
 	Params;
 decode_handshake(S, Params, Buf) ->
@@ -173,13 +172,14 @@ handshake(Parent, S, Handler) ->
 	% field-value" pair, without changing the semantics of the message, by
 	% appending each subsequent field-value to the first, each separated by a
 	% comma.
+	true = proplists:get_value(http_ver, Params) >= {1, 1},
 	true = proplists:is_defined('Host', Params),
 	ensure_contains('Connection', Params, "upgrade"),
 	ensure_contains('Upgrade', Params, "websocket"),
 	"13" = proplists:get_value("Sec-Websocket-Version", Params),
 	Key = proplists:get_value("Sec-Websocket-Key", Params),
 
-	% TODO: return 400 if any of the above fails
+	% TODO: return 400 if any of the above (including decode_handshake/1) fails
 	gen_tcp:send(S, [<<"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: websocket\r\nSec-Websocket-Accept: ">>, sec_websocket_accept(Key), <<"\r\n\r\n">>]),
 	Handler ! {ws_handshake, self(), {
 		proplists:get_value('Host', Params),
