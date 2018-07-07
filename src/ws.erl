@@ -4,7 +4,7 @@
 
 -callback handshake(S :: term(), Params :: tuple()) -> term().
 -callback message(S :: term(), Message :: tuple()) -> term().
--callback close(Reason :: atom() | tuple()) -> term().
+-callback close(S :: term(), Reason :: atom() | tuple()) -> term().
 
 -include_lib("kernel/include/logger.hrl").
 -define(WS_GUID, "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").
@@ -101,16 +101,16 @@ handle_control(_, _, pong, Data) ->
 	io:format("pong get (~p)~n", [Data]);
 handle_control(S, Handler, close, Data) ->
 	gen_tcp:send(S, encode_frame(close, Data)),
-	Handler:close({close, status(Data)});
+	Handler:close(S, {close, status(Data)});
 handle_control(_, _, _, _) ->
 	ok.
 
-handle_data(_, _Fin = 0, _, _) ->
+handle_data(_, _, _Fin = 0, _, _) ->
 	ok;
-handle_data(_, _, control, _) ->
+handle_data(_, _, _, control, _) ->
 	ok;
-handle_data(Handler, _Fin = 1, data, Message) ->
-	Handler:message(Message).
+handle_data(S, Handler, _Fin = 1, data, Message) ->
+	Handler:message(S, Message).
 
 clear_msgbufs(0, Bufs) ->
 	Bufs;
@@ -132,19 +132,19 @@ loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 					handle_control(S, Handler, Opcode, Data),
 					NewOp = case Opcode of 0 -> PrevOp; X -> X end,
 					NewMsgBuf = <<MsgBuf/bytes, Data/bytes>>,
-					handle_data(Handler, Fin, T, {NewOp, NewMsgBuf}),
+					handle_data(S, Handler, Fin, T, {NewOp, NewMsgBuf}),
 					{NextOp, NextMsgBuf} = clear_msgbufs(Fin, {NewOp, NewMsgBuf}),
 					loop(Parent, S, Handler, {Rest, NextOp, NextMsgBuf});
 				{more, _} ->
 					loop(Parent, S, Handler, {NewBuf, PrevOp, MsgBuf})
 			end;
 		{tcp_closed, S} ->
-			Handler:close(tcp_closed),
+			Handler:close(S, tcp_closed),
 			Parent ! conndied,
 			ok;
 		{tcp_error, S, E} ->
 			?LOG_NOTICE("socket error (recv) ~p~n", [E]),
-			Handler:close({tcp_error, E}),
+			Handler:close(S, {tcp_error, E}),
 			Parent ! conndied,
 			ok
 	end.
@@ -195,7 +195,7 @@ handshake(Parent, S, Handler) ->
 
 	% TODO: return 400 if any of the above (including decode_handshake/1) fails
 	gen_tcp:send(S, [<<"HTTP/1.1 101 Switching Protocols\r\nConnection: upgrade\r\nUpgrade: websocket\r\nSec-Websocket-Accept: ">>, sec_websocket_accept(Key), <<"\r\n\r\n">>]),
-	Handler:handshake({
+	Handler:handshake(S, {
 		proplists:get_value('Host', Params),
 		proplists:get_value(path, Params),
 		proplists:get_value("Origin", Params)}),
