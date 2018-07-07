@@ -1,5 +1,5 @@
 -module(ws).
--export([start/3, decode_frame/1]).
+-export([start/3, send/3]).
 -export([handshake/3]).
 
 -callback handshake(S :: term(), Params :: tuple()) -> term().
@@ -116,6 +116,9 @@ clear_msgbufs(0, Bufs) ->
 	Bufs;
 clear_msgbufs(1, _) ->
 	{0, <<>>}.
+
+send(S, Type, Msg) ->
+	gen_tcp:send(S, encode_frame(Type, Msg)).
 
 loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 	inet:setopts(S, [{active, once}]),
