@@ -120,7 +120,7 @@ loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 			NewBuf = <<FrameBuf/bytes, Bytes/bytes>>,
 			% TODO: close if decode_frame/1 crashes
 			case decode_frame(NewBuf) of
-				{ok, Frame = {Fin, {T, Opcode}, Key, Payload}, Rest} ->
+				{ok, {Fin, {T, Opcode}, Key, Payload}, Rest} ->
 					Data = unmask(Key, Payload),
 					handle_control(S, Handler, Opcode, Data),
 					NewOp = case Opcode of 0 -> PrevOp; X -> X end,
