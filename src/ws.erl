@@ -134,7 +134,7 @@ loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 			Handler ! {ws_closed, tcp_closed},
 			Parent ! conndied,
 			ok;
-		{tcp_error, E} ->
+		{tcp_error, S, E} ->
 			?LOG_NOTICE("socket error (recv) ~p~n", [E]),
 			Handler ! {ws_closed, {tcp_error, E}},
 			Parent ! conndied,
