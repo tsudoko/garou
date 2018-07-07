@@ -131,12 +131,12 @@ loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 					loop(Parent, S, Handler, {NewBuf, PrevOp, MsgBuf})
 			end;
 		{tcp_closed, S} ->
-			Handler ! ws_closed,
+			Handler ! {ws_closed, tcp_closed},
 			Parent ! conndied,
 			ok;
 		{tcp_error, E} ->
 			?LOG_NOTICE("socket error (recv) ~p~n", [E]),
-			Handler ! ws_closed,
+			Handler ! {ws_closed, {tcp_error, E}},
 			Parent ! conndied,
 			ok
 	end.
