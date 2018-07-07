@@ -84,15 +84,21 @@ encode_frame(Op, Msg) when byte_size(Msg) =< 65535 ->
 encode_frame(Op, Msg) when byte_size(Msg) =< 18446744073709551615 ->
 	<<1:1, 0:3, (opcode_to_integer(Op)):4, 0:1, 127:7, (byte_size(Msg)):64, Msg/bytes>>.
 
+status(<<>>) ->
+	null;
+status(<<Code:16, Data/bytes>>) ->
+	{Code, Data}.
+
 handle_control(S, ping, Data) ->
 	io:format("ping'd (~p)~n", [Data]),
 	gen_tcp:send(S, <<1:1, 0:3, (opcode_to_integer(pong)):4, 0:1, (byte_size(Data)):7, Data/bytes>>);
 handle_control(_, pong, Data) ->
 	% TODO: send pings, timeout if there's no pong in time
 	io:format("pong get (~p)~n", [Data]);
-handle_control(S, close, <<Code:16, Data/bytes>>) ->
-	io:format("client sent close (code ~p, reason ~p~n)", [Code, Data]),
+handle_control(S, close, Data) ->
+	io:format("client sent close (status ~p)~n", [status(Data)]),
 	% TODO: close connection
+	% TODO: pass code+reason to handler
 	ok;
 handle_control(_, _, _) ->
 	ok.
