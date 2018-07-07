@@ -89,20 +89,19 @@ status(<<>>) ->
 status(<<Code:16, Data/bytes>>) ->
 	{Code, Data}.
 
-handle_control(S, ping, Data) ->
+handle_control(S, _, ping, Data) ->
 	io:format("ping'd (~p)~n", [Data]),
 	gen_tcp:send(S, <<1:1, 0:3, (opcode_to_integer(pong)):4, 0:1, (byte_size(Data)):7, Data/bytes>>);
-handle_control(_, pong, Data) ->
+handle_control(_, _, pong, Data) ->
 	% TODO: send pings, timeout if there's no pong in time
 	io:format("pong get (~p)~n", [Data]);
-handle_control(S, close, Data) ->
-	io:format("client sent close (status ~p)~n", [status(Data)]),
-	% TODO: close connection
-	% TODO: pass code+reason to handler
-	ok;
-handle_control(_, _, _) ->
+handle_control(S, Handler, close, Data) ->
+	gen_tcp:send(S, encode_frame(close, Data)),
+	Handler ! {ws_closed, {close, status(Data)}};
+handle_control(_, _, _, _) ->
 	ok.
 
+% TODO: make this not return any data
 handle_data(_, _Fin = 0, Op, Buf) when Op /= 0 ->
 	{Op, Buf};
 handle_data(Handler, _Fin = 1, Op, Buf) ->
@@ -121,7 +120,7 @@ loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 			case decode_frame(NewBuf) of
 				{ok, Frame = {Fin, {_, Opcode}, Key, Payload}, Rest} ->
 					Data = unmask(Key, Payload),
-					handle_control(S, Opcode, Data),
+					handle_control(S, Handler, Opcode, Data),
 					NewOp = case Opcode of 0 -> PrevOp; X -> X end,
 					NewMsgBuf = <<MsgBuf/bytes, Data/bytes>>,
 					% TODO: maybe don't expose control frames
