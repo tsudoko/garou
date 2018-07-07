@@ -31,7 +31,7 @@ gen_name(N) when length(N) < 3 ->
 	Case = case rand:uniform(2) of 1 -> $a; 2 -> $A end,
 	gen_name([rand:uniform($z - $a) + Case|N]);
 gen_name(N) ->
-	N.
+	list_to_binary(N).
 
 % TODO (user messages): UndoPoint, Undo, Fill
 % TODO (server replies): clearUpdate, admin, register, unregister, Text, Undo
