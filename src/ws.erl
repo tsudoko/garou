@@ -102,9 +102,11 @@ handle_control(_, _, _, _) ->
 	ok.
 
 % TODO: make this not return any data
-handle_data(_, _Fin = 0, Op, Buf) when Op /= 0 ->
+handle_data(_, _, control, Op, Buf) ->
 	{Op, Buf};
-handle_data(Handler, _Fin = 1, Op, Buf) ->
+handle_data(_, _Fin = 0, data, Op, Buf) when Op /= 0 ->
+	{Op, Buf};
+handle_data(Handler, _Fin = 1, data, Op, Buf) ->
 	Handler ! {ws_message, self(), {Op, Buf}},
 	{0, <<>>}.
 
@@ -118,13 +120,12 @@ loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 			NewBuf = <<FrameBuf/bytes, Bytes/bytes>>,
 			% TODO: close if decode_frame/1 crashes
 			case decode_frame(NewBuf) of
-				{ok, Frame = {Fin, {_, Opcode}, Key, Payload}, Rest} ->
+				{ok, Frame = {Fin, {T, Opcode}, Key, Payload}, Rest} ->
 					Data = unmask(Key, Payload),
 					handle_control(S, Handler, Opcode, Data),
 					NewOp = case Opcode of 0 -> PrevOp; X -> X end,
 					NewMsgBuf = <<MsgBuf/bytes, Data/bytes>>,
-					% TODO: maybe don't expose control frames
-					{NextOp, NextMsgBuf} = handle_data(Handler, Fin, NewOp, NewMsgBuf),
+					{NextOp, NextMsgBuf} = handle_data(Handler, Fin, T, NewOp, NewMsgBuf),
 					loop(Parent, S, Handler, {Rest, NextOp, NextMsgBuf});
 				{more, _} ->
 					loop(Parent, S, Handler, {NewBuf, PrevOp, MsgBuf})
