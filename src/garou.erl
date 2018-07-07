@@ -46,8 +46,12 @@ message_json(S, [{<<"NameChange">>, Name}|Rest]) ->
 	?MODULE ! {setclient, S, {Admin, Name}},
 	ws:send(S, text, jsx:encode(#{<<"NameChange">> => #{from => PrevName, to => Name}})),
 	message_json(S, Rest);
-message_json(S, [{<<"Cursor">>, _Cursor}|Rest]) ->
-	% TODO: send to other users
+message_json(S = {_, {_, Path, _}}, [{<<"Cursor">>, Cursor}|Rest]) ->
+	X = proplists:get_value(<<"X">>, Cursor),
+	Y = proplists:get_value(<<"Y">>, Cursor),
+	?MODULE ! {getclient, self(), S},
+	receive {getclient, S, _, {_, Name}} -> ok end,
+	?MODULE ! {roomsend, Path, #{<<"User">> => Name, <<"Cursor">> => #{'X' => X, 'Y' => Y}}},
 	message_json(S, Rest);
 message_json(S, [Msg|Rest]) ->
 	io:format("unhandled msg ~p~n", [Msg]),
@@ -76,6 +80,9 @@ loop(Rooms, Connections) ->
 			#{S := ID} = Connections,
 			#{Path := {Canvas, Users}} = Rooms,
 			loop(Rooms#{Path => {Canvas, Users#{ID => Client}}}, Connections);
+		{roomsend, Path, Msg} ->
+			[ws:send(S, text, jsx:encode(Msg)) || S = {_, {_, TargetPath, _}} <- maps:keys(Connections), TargetPath == Path],
+			loop(Rooms, Connections);
 		{delconn, S} ->
 			loop(Rooms, maps:remove(S, Connections))
 	end.
