@@ -101,13 +101,16 @@ handle_control(S, Handler, close, Data) ->
 handle_control(_, _, _, _) ->
 	ok.
 
-% TODO: make this not return any data
-handle_data(_, _, control, Op, Buf) ->
-	{Op, Buf};
-handle_data(_, _Fin = 0, data, Op, Buf) when Op /= 0 ->
-	{Op, Buf};
-handle_data(Handler, _Fin = 1, data, Op, Buf) ->
-	Handler ! {ws_message, self(), {Op, Buf}},
+handle_data(_, _Fin = 0, _, _) ->
+	ok;
+handle_data(_, _, control, _) ->
+	ok;
+handle_data(Handler, _Fin = 1, data, Message) ->
+	Handler ! {ws_message, self(), Message}.
+
+clear_msgbufs(0, Bufs) ->
+	Bufs;
+clear_msgbufs(1, _) ->
 	{0, <<>>}.
 
 loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
@@ -125,7 +128,8 @@ loop(Parent, S, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 					handle_control(S, Handler, Opcode, Data),
 					NewOp = case Opcode of 0 -> PrevOp; X -> X end,
 					NewMsgBuf = <<MsgBuf/bytes, Data/bytes>>,
-					{NextOp, NextMsgBuf} = handle_data(Handler, Fin, T, NewOp, NewMsgBuf),
+					handle_data(Handler, Fin, T, {NewOp, NewMsgBuf}),
+					{NextOp, NextMsgBuf} = clear_msgbufs(Fin, {NewOp, NewMsgBuf}),
 					loop(Parent, S, Handler, {Rest, NextOp, NextMsgBuf});
 				{more, _} ->
 					loop(Parent, S, Handler, {NewBuf, PrevOp, MsgBuf})
