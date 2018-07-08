@@ -226,11 +226,7 @@ srvloop_(Maxnum, LSock, Handler, Num) ->
 	end.
 
 start(Maxnum, LPort, Handler) ->
-	case gen_tcp:listen(LPort, [binary, {active, false}]) of
-		{ok, LS} ->
-			srvloop(Maxnum, LS, Handler),
-			{ok, Port} = inet:port(LS),
-			Port;
-		{error, _} = Err ->
-			Err
-	end.
+	{ok, LS} = gen_tcp:listen(LPort, [binary, {active, false}]),
+	srvloop(Maxnum, LS, Handler),
+	{ok, Port} = inet:port(LS),
+	Port.
