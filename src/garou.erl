@@ -33,9 +33,11 @@ message_json(S, ID) when is_number(ID) ->
 	client_init(S);
 message_json(_, []) ->
 	ok;
-message_json(S, [{<<"PLine">>, PLine}|Rest]) ->
-	% TODO: save in canvas, send to other users
-	io:format("someone sent a line ~p~n", [PLine]),
+message_json(S = {_, {_, Path, _}}, [{<<"PLine">>, PLine}|Rest]) ->
+	?MODULE ! {getclient, self(), S},
+	receive {getclient, S, _, {_, Name}} -> ok end,
+	% TODO: save in canvas
+	?MODULE ! {roomsend, Path, #{<<"User">> => Name, <<"PLine">> => PLine}},
 	message_json(S, Rest);
 message_json(S, [{<<"NameChange">>, Name}|Rest]) ->
 	?MODULE ! {getclient, self(), S},
