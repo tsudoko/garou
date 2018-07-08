@@ -26,8 +26,8 @@ gen_name(N) when length(N) < 3 ->
 gen_name(N) ->
 	list_to_binary(N).
 
-% TODO (user messages): UndoPoint, Undo, Fill, Text
-% TODO (server replies): clearUpdate, admin, register, unregister, Text, Undo
+% TODO (user messages): UndoPoint, Undo, Unban, Fill, Text
+% TODO (server replies): clearUpdate, register, unregister, Text, Undo
 message_json(S, ID) when is_number(ID) ->
 	?MODULE ! {newclient, S, ID},
 	client_init(S);
@@ -61,15 +61,17 @@ client_init(S) ->
 	?MODULE ! {getclient, self(), S},
 	receive {getclient, S, Canvas, Client} -> ok end,
 	{N, X, Y, _} = Canvas,
-	{_Admin, Name} = Client,
+	{Admin, Name} = Client,
 	ws:send(S, text, jsx:encode(#{canvasSize => #{'N' => N, 'X' => X, 'Y' => Y}})),
+	if Admin -> ws:send(S, text, jsx:encode(#{admin => Admin})); true -> ok end,
 	ws:send(S, text, jsx:encode(#{yourname => Name})).
 
 loop(Rooms, Connections) ->
 	receive
 		{newclient, S = {_, {_, Path, _}}, ID} ->
 			{Canvas, Users} = maps:get(Path, Rooms, {{2, 1000, 1000, null}, #{}}),
-			User = maps:get(ID, Users, {false, gen_name()}),
+			Admin = Users == #{},
+			User = maps:get(ID, Users, {Admin, gen_name()}),
 			loop(Rooms#{Path => {Canvas, Users#{ID => User}}}, Connections#{S => ID});
 		{getclient, Pid, S = {_, {_, Path, _}}} ->
 			#{S := ID} = Connections,
