@@ -89,6 +89,6 @@ loop(Rooms, Connections) ->
 
 start() ->
 	true = jsx:maps_support(),
-	spawn(ws, start, [1, 9393, ?MODULE]),
+	spawn(ws, start, [200, 9393, ?MODULE]),
 	Pid = spawn(?MODULE, loop, [#{}, #{}]),
 	register(?MODULE, Pid).
