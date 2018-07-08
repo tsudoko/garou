@@ -6,7 +6,7 @@
 handshake(State) ->
 	io:format("got handshake from ~p~n", [State]).
 
-message(State, {text, "new"}) ->
+message(State, {text, <<"new">>}) ->
 	ID = erlang:phash2(State),
 	?MODULE ! {newclient, State, ID},
 	ws:send(State, text, jsx:encode(#{id => ID})),
