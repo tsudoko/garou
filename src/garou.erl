@@ -12,12 +12,7 @@ message(State, {text, <<"new">>}) ->
 	ws:send(State, text, jsx:encode(#{id => ID})),
 	client_init(State);
 message(State, {text, Msg}) ->
-	try
-		message_json(State, jsx:decode(Msg))
-	catch error:badarg ->
-		?MODULE ! {newclient, State, Msg},
-		client_init(State)
-	end.
+	message_json(State, jsx:decode(Msg)).
 
 close(State, Reason) ->
 	?MODULE ! {delconn, State},
@@ -33,6 +28,9 @@ gen_name(N) ->
 
 % TODO (user messages): UndoPoint, Undo, Fill, Text
 % TODO (server replies): clearUpdate, admin, register, unregister, Text, Undo
+message_json(S, ID) when is_number(ID) ->
+	?MODULE ! {newclient, S, ID},
+	client_init(S);
 message_json(_, []) ->
 	ok;
 message_json(S, [{<<"PLine">>, PLine}|Rest]) ->
