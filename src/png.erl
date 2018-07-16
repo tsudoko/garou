@@ -20,7 +20,7 @@ chunk(Type, Data) ->
 
 filter(none, rgba8, _, <<Data/bytes>>) ->
 	<<0, Data/bytes>>;
-filter(sub, rgba8, _, <<Cur:32, Rest/bytes>>) ->
+filter(sub, rgba8, _, <<Cur:32/bytes, Rest/bytes>>) ->
 	filter_sub(rgba8, Rest, <<1, Cur/bytes>>);
 filter(up, rgba8, Prev, Cur) ->
 	filter_up(rgba8, Prev, Cur, <<2>>);
