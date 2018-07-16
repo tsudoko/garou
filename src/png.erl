@@ -64,6 +64,21 @@ filter_paeth(rgba8, <<PUR, PUG, PUB, PUA, UR, UG, UB, UA, Prev/bytes>>, <<PR, PG
 filter_paeth(rgba8, <<_:32>>, <<_:32>>, Acc) ->
 	Acc.
 
+filter_adaptive(rgba8, Prev, Data) ->
+	AbsSignedDiffs = fun
+		(<<I/signed, Rest/bytes>>, Cont, Acc) -> Cont(Rest, Cont, [abs(I)|Acc]);
+		(<<>>, _, Acc) -> Acc
+	end,
+
+	FilterScanlineScore = fun(F, Format, Prev, Data) ->
+		Scanline = <<_, Stuff/bytes>> = filter(F, Format, Prev, Data),
+		{F, Scanline, lists:sum(AbsSignedDiffs(Stuff, AbsSignedDiffs, []))}
+	end,
+
+	_FilterResults = [{_, BestScanline, _}|_] = lists:keysort(3, [FilterScanlineScore(F, rgba8, Prev, Data) || F <- [none, sub, up, average, paeth]]),
+	%io:format("~p~n", [[{F, Score} || {F, _, Score} <- FilterResults]]),
+	BestScanline.
+
 paeth(Prev, Up, PrevUp) ->
 	P = Prev + Up - PrevUp,
 	case {abs(P - Prev), abs(P - Up), abs(P - PrevUp)} of
@@ -93,7 +108,7 @@ idat_(rgba8, Z, Bytes, SSize, Acc) when byte_size(Bytes) == SSize ->
 idat_(rgba8, Z, Bytes, SSize, Acc) ->
 	<<Prev:SSize/bytes, Scanline:SSize/bytes, Rest/bytes>> = Bytes,
 	% TODO: adaptive filtering
-	C = zlib:deflate(Z, filter(paeth, rgba8, Prev, Scanline)),
+	C = zlib:deflate(Z, filter_adaptive(rgba8, Prev, Scanline)),
 	idat_(rgba8, Z, <<Scanline/bytes, Rest/bytes>>, SSize, [C|Acc]).
 
 encode(Bytes, W, H, rgba8) ->
