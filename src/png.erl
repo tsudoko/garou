@@ -20,12 +20,12 @@ chunk(Type, Data) ->
 
 filter(none, rgba8, _, <<Data/bytes>>) ->
 	<<0, Data/bytes>>;
-filter(sub, rgba8, _, <<Cur:32/bytes, Rest/bytes>>) ->
-	filter_sub(rgba8, Rest, <<1, Cur/bytes>>);
+filter(sub, rgba8, _, <<R, G, B, A, Rest/bytes>>) ->
+	filter_sub(rgba8, <<R, G, B, A, Rest/bytes>>, <<1, R, G, B, A>>);
 filter(up, rgba8, Prev, Cur) ->
 	filter_up(rgba8, Prev, Cur, <<2>>);
 filter(average, rgba8, <<UR, UG, UB, UA, Prev/bytes>>, <<R, G, B, A, Rest/bytes>>) ->
-	filter_average(rgba8, Prev, Rest, <<3,
+	filter_average(rgba8, Prev, <<R, G, B, A, Rest/bytes>>, <<3,
 		(R-floor(UR/2)),
 		(G-floor(UG/2)),
 		(B-floor(UB/2)),
@@ -37,23 +37,21 @@ filter(paeth, rgba8, <<UR, UG, UB, UA, Prev/bytes>>, <<R, G, B, A, Rest/bytes>>)
 		(B-paeth(0, UB, 0)),
 		(A-paeth(0, UA, 0))>>).
 
-filter_sub(rgba8, <<R, G, B, A, Rest/bytes>>, Acc) ->
-	<<PR, PG, PB, PA>> = binary_part(Acc, {byte_size(Acc), -4}),
-	filter_sub(rgba8, Rest, <<Acc/bytes, (R-PR), (G-PG), (B-PB), (A-PA)>>);
-filter_sub(_, <<>>, Acc) ->
+filter_sub(rgba8, <<PR, PG, PB, PA, R, G, B, A, Rest/bytes>>, Acc) ->
+	filter_sub(rgba8, <<R, G, B, A, Rest/bytes>>, <<Acc/bytes, (R-PR), (G-PG), (B-PB), (A-PA)>>);
+filter_sub(rgba8, <<_:32>>, Acc) ->
 	Acc.
 filter_up(rgba8, <<PR, PG, PB, PA, PRest/bytes>>, <<R, G, B, A, Rest/bytes>>, Acc) ->
 	filter_up(rgba8, PRest, Rest, <<Acc/bytes, (R-PR), (G-PG), (B-PB), (A-PA)>>);
 filter_up(_, <<>>, <<>>, Acc) ->
 	Acc.
-filter_average(rgba8, <<UR, UG, UB, UA, Prev/bytes>>, <<R, G, B, A, Rest/bytes>>, Acc) ->
-	<<PR, PG, PB, PA>> = binary_part(Acc, {byte_size(Acc), -4}),
-	filter_average(rgba8, Prev, Rest, <<Acc/bytes,
+filter_average(rgba8, <<UR, UG, UB, UA, Prev/bytes>>, <<PR, PG, PB, PA, R, G, B, A, Rest/bytes>>, Acc) ->
+	filter_average(rgba8, Prev, <<R, G, B, A, Rest/bytes>>, <<Acc/bytes,
 		(R-floor((PR+UR)/2)),
 		(G-floor((PG+UG)/2)),
 		(B-floor((PB+UB)/2)),
 		(A-floor((PA+UA)/2))>>);
-filter_average(_, <<>>, <<>>, Acc) ->
+filter_average(rgba8, <<>>, <<_:32>>, Acc) ->
 	Acc.
 filter_paeth(rgba8, <<PUR, PUG, PUB, PUA, UR, UG, UB, UA, Prev/bytes>>, <<PR, PG, PB, PA, R, G, B, A, Rest/bytes>>, Acc) ->
 	filter_paeth(rgba8, <<UR, UG, UB, UA, Prev/bytes>>, <<R, G, B, A, Rest/bytes>>, <<Acc/bytes,
