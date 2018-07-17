@@ -105,7 +105,7 @@ idat_(rgba8, Z, Bytes, SSize, Acc) when byte_size(Bytes) == SSize ->
 	{ok, chunk(<<"IDAT">>, iolist_to_binary(lists:reverse([C|Acc])))};
 idat_(rgba8, Z, Bytes, SSize, Acc) ->
 	<<Prev:SSize/bytes, Scanline:SSize/bytes, Rest/bytes>> = Bytes,
-	% TODO: adaptive filtering
+	% TODO: customizable filtering mode
 	C = zlib:deflate(Z, filter_adaptive(rgba8, Prev, Scanline)),
 	idat_(rgba8, Z, <<Scanline/bytes, Rest/bytes>>, SSize, [C|Acc]).
 
