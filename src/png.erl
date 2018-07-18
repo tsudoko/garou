@@ -41,8 +41,8 @@ filter_sub(rgba8, {PR, PG, PB, PA}, <<R, G, B, A, Rest/bytes>>, Acc) ->
 	filter_sub(rgba8, {R, G, B, A}, Rest, <<Acc/bytes, (R-PR), (G-PG), (B-PB), (A-PA)>>);
 filter_sub(rgba8, _, <<>>, Acc) ->
 	Acc.
-filter_up(rgba8, <<PR, PG, PB, PA, PRest/bytes>>, <<R, G, B, A, Rest/bytes>>, Acc) ->
-	filter_up(rgba8, PRest, Rest, <<Acc/bytes, (R-PR), (G-PG), (B-PB), (A-PA)>>);
+filter_up(rgba8, <<UR, UG, UB, UA, Prev/bytes>>, <<R, G, B, A, Rest/bytes>>, Acc) ->
+	filter_up(rgba8, Prev, Rest, <<Acc/bytes, (R-UR), (G-UG), (B-UB), (A-UA)>>);
 filter_up(_, <<>>, <<>>, Acc) ->
 	Acc.
 filter_average(rgba8, <<UR, UG, UB, UA, Prev/bytes>>, {PR, PG, PB, PA}, <<R, G, B, A, Rest/bytes>>, Acc) ->
