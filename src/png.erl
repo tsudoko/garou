@@ -62,18 +62,16 @@ filter_paeth(rgba8, {PUR, PUG, PUB, PUA}, <<UR, UG, UB, UA, Prev/bytes>>, {PR, P
 filter_paeth(rgba8, _, <<>>, _, <<>>, Acc) ->
 	Acc.
 
+abs_signed_diffs(<<I/signed, Rest/bytes>>, Acc) ->
+	abs_signed_diffs(Rest, [abs(I)|Acc]);
+abs_signed_diffs(<<>>, Acc) ->
+	Acc.
+filter_adaptive_score(Filter, PixelFormat, Prev, Data) ->
+	Scanline = <<_, Stuff/bytes>> = filter(Filter, PixelFormat, Prev, Data),
+	{Filter, Scanline, lists:sum(abs_signed_diffs(Stuff, []))}.
+
 filter_adaptive(rgba8, Prev, Data) ->
-	AbsSignedDiffs = fun
-		(<<I/signed, Rest/bytes>>, Cont, Acc) -> Cont(Rest, Cont, [abs(I)|Acc]);
-		(<<>>, _, Acc) -> Acc
-	end,
-
-	FilterScanlineScore = fun(F, Format, Prev, Data) ->
-		Scanline = <<_, Stuff/bytes>> = filter(F, Format, Prev, Data),
-		{F, Scanline, lists:sum(AbsSignedDiffs(Stuff, AbsSignedDiffs, []))}
-	end,
-
-	_FilterResults = [{_, BestScanline, _}|_] = lists:keysort(3, [FilterScanlineScore(F, rgba8, Prev, Data) || F <- [none, sub, up, average, paeth]]),
+	_FilterResults = [{_, BestScanline, _}|_] = lists:keysort(3, [filter_adaptive_score(F, rgba8, Prev, Data) || F <- [none, sub, up, average, paeth]]),
 	%io:format("~p~n", [[{F, Score} || {F, _, Score} <- FilterResults]]),
 	BestScanline.
 
