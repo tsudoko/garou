@@ -3,13 +3,14 @@
 
 % base: sub
 akarin(rgba8, _, <<R, G, B, A, Rest/bytes>>) ->
-	akarin_(rgba8, <<R, G, B, A, Rest/bytes>>, <<1, -R, -G, -B, -A>>).
-akarin_(rgba8, <<PR, PG, PB, PA, R, G, B, A, Rest/bytes>>, Acc) ->
-	akarin_(rgba8, <<R, G, B, A, Rest/bytes>>, <<Acc/bytes, (R-PR), (G-PG), (B-PB), (A-PA)>>);
-akarin_(rgba8, <<_:32>>, Acc) ->
+	akarin_(rgba8, {R, G, B, A}, Rest, <<1, -R, -G, -B, -A>>).
+akarin_(rgba8, {PR, PG, PB, PA}, <<R, G, B, A, Rest/bytes>>, Acc) ->
+	akarin_(rgba8, {R, G, B, A}, Rest, <<Acc/bytes, (R-PR), (G-PG), (B-PB), (A-PA)>>);
+akarin_(rgba8, _, <<>>, Acc) ->
 	Acc.
 
 % TODO: add paeth and up versions too!
+% another idea: just change the filter id and see what happens (on legit filters too)
 
 % base: sub
 kaze(rgba8, _, <<Cur:32/bytes, Rest/bytes>>) ->
