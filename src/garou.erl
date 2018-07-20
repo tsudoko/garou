@@ -36,7 +36,18 @@ message_json(_, []) ->
 message_json(S = {_, {_, Path, _}}, [{<<"PLine">>, PLine}|Rest]) ->
 	?MODULE ! {getclient, self(), S},
 	receive {getclient, S, _, {_, Name}} -> ok end,
-	% TODO: save in canvas
+	#{<<"X0">> := X0
+	 ,<<"X1">> := X1
+	 ,<<"Y0">> := Y0
+	 ,<<"Y1">> := Y1
+	 ,<<"Layer">> := Layer
+	 ,<<"Size">> := Size
+	 ,<<"R">> := R
+	 ,<<"G">> := G
+	 ,<<"B">> := B
+	 ,<<"A">> := A} = maps:from_list(PLine),
+	F = fun(I) -> img:line(I, {R, G, B, A}, {X0, Y0}, {X1, Y1}, Size) end,
+	?MODULE ! {modlayer, Path, Layer, F},
 	?MODULE ! {roomsend, Path, #{<<"User">> => Name, <<"PLine">> => PLine}},
 	message_json(S, Rest);
 message_json(S, [{<<"NameChange">>, Name}|Rest]) ->
@@ -69,7 +80,7 @@ client_init(S) ->
 loop(Rooms, Connections) ->
 	receive
 		{newclient, S = {_, {_, Path, _}}, ID} ->
-			{Canvas, Users} = maps:get(Path, Rooms, {{2, 1000, 1000, null}, #{}}),
+			{Canvas, Users} = maps:get(Path, Rooms, {{2, 1000, 1000, [<<0:(1000*1000*4)>>, <<0:(1000*1000*4)>>]}, #{}}),
 			Admin = Users == #{},
 			User = maps:get(ID, Users, {Admin, gen_name()}),
 			loop(Rooms#{Path => {Canvas, Users#{ID => User}}}, Connections#{S => ID});
@@ -82,6 +93,12 @@ loop(Rooms, Connections) ->
 			#{S := ID} = Connections,
 			#{Path := {Canvas, Users}} = Rooms,
 			loop(Rooms#{Path => {Canvas, Users#{ID => Client}}}, Connections);
+		{modlayer, Path, Layer, F} ->
+			#{Path := {{NLayer, W, H, Layers}, Clients}} = Rooms,
+			true = NLayer >= Layer,
+			{Before, [L|After]} = lists:nthtail(Layer, Layers),
+			NewL = F({img, W, H, L}),
+			loop(Rooms#{Path => {{NLayer, W, H, Before ++ [NewL|After], Clients}}}, Connections);
 		{roomsend, Path, Msg} ->
 			[ws:send(S, text, jsx:encode(Msg)) || S = {_, {_, TargetPath, _}} <- maps:keys(Connections), TargetPath == Path],
 			loop(Rooms, Connections);
