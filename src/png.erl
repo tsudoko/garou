@@ -5,10 +5,6 @@
 -define(INT32MAX, 1 bsl 31 - 1).
 
 % TODO: support multiple IDAT chunks, enforce max chunk size
-% maybe TODO: support indexed images too
-% m a y b e  TODO: support grayscale images too
-% for indexed images: putting transparent colors first allows you to make the transparency chunk smaller
-% also tRNS for anything with an alpha channel
 
 chunk(Type) ->
 	chunk(Type, <<>>).
