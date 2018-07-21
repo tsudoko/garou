@@ -71,11 +71,17 @@ message_json(S, [Msg|Rest]) ->
 client_init(S) ->
 	?MODULE ! {getclient, self(), S},
 	receive {getclient, S, Canvas, Client} -> ok end,
-	{N, X, Y, _} = Canvas,
+	{N, W, H, Layers} = Canvas,
 	{Admin, Name} = Client,
-	ws:send(S, text, jsx:encode(#{canvasSize => #{'N' => N, 'X' => X, 'Y' => Y}})),
+	ws:send(S, text, jsx:encode(#{canvasSize => #{'N' => N, 'X' => W, 'Y' => H}})),
 	if Admin -> ws:send(S, text, jsx:encode(#{admin => Admin})); true -> ok end,
-	ws:send(S, text, jsx:encode(#{yourname => Name})).
+	ws:send(S, text, jsx:encode(#{yourname => Name})),
+	[ws:send(S, text, jsx:encode(#{clearUpdate =>
+		#{<<"Clear">> => true
+		 ,<<"Layer">> => LNum
+		 ,<<"Png">> => base64:encode(png:encode(Layer, W, H, rgba8))
+		 ,'X' => 0
+		 ,'Y' => 0}})) || Layer <- Layers, LNum <- lists:seq(0, N-1)].
 
 loop(Rooms, Connections) ->
 	receive
