@@ -80,7 +80,7 @@ client_init(S) ->
 loop(Rooms, Connections) ->
 	receive
 		{newclient, S = {_, {_, Path, _}}, ID} ->
-			{Canvas, Users} = maps:get(Path, Rooms, {{2, 1000, 1000, [<<0:(1000*1000*4)>>, <<0:(1000*1000*4)>>]}, #{}}),
+			{Canvas, Users} = maps:get(Path, Rooms, {{2, 1000, 1000, [<<0:(1000*1000*32)>>, <<0:(1000*1000*32)>>]}, #{}}),
 			Admin = Users == #{},
 			User = maps:get(ID, Users, {Admin, gen_name()}),
 			loop(Rooms#{Path => {Canvas, Users#{ID => User}}}, Connections#{S => ID});
@@ -96,8 +96,8 @@ loop(Rooms, Connections) ->
 		{modlayer, Path, Layer, F} ->
 			#{Path := {{NLayer, W, H, Layers}, Clients}} = Rooms,
 			true = NLayer >= Layer,
-			{Before, [L|After]} = lists:nthtail(Layer, Layers),
-			NewL = F({img, W, H, L}),
+			{Before, [L|After]} = lists:split(Layer, Layers),
+			{img, W, H, NewL} = F({img, W, H, L}),
 			loop(Rooms#{Path => {{NLayer, W, H, Before ++ [NewL|After], Clients}}}, Connections);
 		{roomsend, Path, Msg} ->
 			[ws:send(S, text, jsx:encode(Msg)) || S = {_, {_, TargetPath, _}} <- maps:keys(Connections), TargetPath == Path],
