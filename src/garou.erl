@@ -104,7 +104,7 @@ loop(Rooms, Connections) ->
 			true = NLayer >= Layer,
 			{Before, [L|After]} = lists:split(Layer, Layers),
 			{img, W, H, NewL} = F({img, W, H, L}),
-			loop(Rooms#{Path => {{NLayer, W, H, Before ++ [NewL|After], Clients}}}, Connections);
+			loop(Rooms#{Path => {{NLayer, W, H, Before ++ [NewL|After]}, Clients}}, Connections);
 		{roomsend, Path, Msg} ->
 			[ws:send(S, text, jsx:encode(Msg)) || S = {_, {_, TargetPath, _}} <- maps:keys(Connections), TargetPath == Path],
 			loop(Rooms, Connections);
