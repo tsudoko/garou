@@ -123,9 +123,6 @@ send({S, _}, Type, Msg) ->
 loop(Parent, State = {S, _}, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 	inet:setopts(S, [{active, once}]),
 	receive
-		{ws_message, {Op, Msg}} ->
-			ok = gen_tcp:send(S, encode_frame(Op, Msg)),
-			loop(Parent, State, Handler, {FrameBuf, PrevOp, MsgBuf});
 		{tcp, S, Bytes} ->
 			NewBuf = <<FrameBuf/bytes, Bytes/bytes>>,
 			% TODO: close if decode_frame/1 crashes
