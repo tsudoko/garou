@@ -121,9 +121,8 @@ send({S, _}, Type, Msg) ->
 	gen_tcp:send(S, encode_frame(Type, Msg)).
 
 loop(Parent, State = {S, _}, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
-	inet:setopts(S, [{active, once}]),
-	receive
-		{tcp, S, Bytes} ->
+	case gen_tcp:recv(S, 0) of
+		{ok, Bytes} ->
 			NewBuf = <<FrameBuf/bytes, Bytes/bytes>>,
 			% TODO: close if decode_frame/1 crashes
 			case decode_frame(NewBuf) of
@@ -138,11 +137,11 @@ loop(Parent, State = {S, _}, Handler, {FrameBuf, PrevOp, MsgBuf}) ->
 				{more, _} ->
 					loop(Parent, State, Handler, {NewBuf, PrevOp, MsgBuf})
 			end;
-		{tcp_closed, S} ->
+		{error, closed} ->
 			Handler:close(State, tcp_closed),
 			Parent ! conndied,
 			ok;
-		{tcp_error, S, E} ->
+		{error, E} ->
 			?LOG_NOTICE("socket error (recv) ~p~n", [E]),
 			Handler:close(State, {tcp_error, E}),
 			Parent ! conndied,
