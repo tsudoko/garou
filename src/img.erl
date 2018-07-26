@@ -22,15 +22,20 @@ line_fun({X1, Y1}, {X2, Y2}) ->
 	B = ((Y1 + Y2) - A * (X1 + X2)) / 2,
 	fun(X) -> A*X+B end.
 
-line(Img, Colour, Start, End) ->
-	line(Img, Colour, Start, End, 1).
-line(Img, Colour, Start, End, Thickness) when Thickness =/= 1 ->
+linexy(Start, End) ->
+	linexy(Start, End, 1).
+linexy(Start, End, Thickness) when Thickness =/= 1 ->
 	logger:warning("requested unimplemented thickness (~p), falling back to 1", [Thickness]),
-	line(Img, Colour, Start, End, 1);
-line(Img, Colour, {X, SY}, {X, EY}, Thickness) ->
+	linexy(Start, End, 1);
+linexy({X, SY}, {X, EY}, _Thickness) ->
 	{Y1, Y2} = tsort(SY, EY),
-	set_pixels(Img, Colour, [{X, round(Y)} || Y <- lists:seq(Y1, Y2)]);
-line(Img, Colour, Start = {SX, _}, End = {EX, _}, Thickness) ->
+	[{X, round(Y)} || Y <- lists:seq(Y1, Y2)];
+linexy(Start = {SX, _}, End = {EX, _}, Thickness) ->
 	F = line_fun(Start, End),
 	{X1, X2} = tsort(SX, EX),
-	set_pixels(Img, Colour, [{X, round(F(X))} || X <- lists:seq(X1, X2)]).
+	[{X, round(F(X))} || X <- lists:seq(X1, X2)].
+
+line(Img, Colour, Start, End) ->
+	line(Img, Colour, Start, End, 1).
+line(Img, Colour, Start, End, Thickness) ->
+	set_pixels(Img, Colour, linexy(Start, End, Thickness)).
