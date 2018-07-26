@@ -1,5 +1,5 @@
 -module(img).
--export([new/2, set_pixel/3, set_pixels/3, line/4, line/5]).
+-export([new/2, draw/3, line/2, line/3]).
 
 tsort(A, B) when A > B -> {B, A};
 tsort(A, B)            -> {A, B}.
@@ -7,14 +7,14 @@ tsort(A, B)            -> {A, B}.
 new(W, H) ->
 	{?MODULE, W, H, <<0:(W*H*32)>>}.
 
-set_pixel({?MODULE, W, H, Data}, {R, G, B, A}, {X, Y}) when X < W andalso Y < H ->
+draw({?MODULE, W, H, Data}, {R, G, B, A}, {X, Y}) when X < W andalso Y < H ->
 	Offset = Y*W*4+X*4,
 	<<Before:Offset/bytes, _:32, After/bytes>> = Data,
-	{?MODULE, W, H, <<Before/bytes, R, G, B, A, After/bytes>>}.
+	{?MODULE, W, H, <<Before/bytes, R, G, B, A, After/bytes>>};
 
-set_pixels(Img, Colour, [Cur|Rest]) ->
-	set_pixels(set_pixel(Img, Colour, Cur), Colour, Rest);
-set_pixels(Img, _, []) ->
+draw(Img, Colour, [Cur|Rest]) ->
+	draw(draw(Img, Colour, Cur), Colour, Rest);
+draw(Img, _, []) ->
 	Img.
 
 line_fun({X1, Y1}, {X2, Y2}) ->
@@ -25,15 +25,15 @@ line_fun({X1, Y1}, {X2, Y2}) ->
 		false -> {x, fun(X) -> A*X+B end}
 	end.
 
-linexy(Start, End) ->
-	linexy(Start, End, 1).
-linexy(Start, End, Thickness) when Thickness =/= 1 ->
+line(Start, End) ->
+	line(Start, End, 1).
+line(Start, End, Thickness) when Thickness =/= 1 ->
 	logger:warning("requested unimplemented thickness (~p), falling back to 1", [Thickness]),
-	linexy(Start, End, 1);
-linexy({X, SY}, {X, EY}, _Thickness) ->
+	line(Start, End, 1);
+line({X, SY}, {X, EY}, _Thickness) ->
 	{Y1, Y2} = tsort(SY, EY),
 	[{X, round(Y)} || Y <- lists:seq(Y1, Y2)];
-linexy(Start = {SX, SY}, End = {EX, EY}, Thickness) ->
+line(Start = {SX, SY}, End = {EX, EY}, Thickness) ->
 	{Axis, F} = line_fun(Start, End),
 	case Axis of
 		x ->
@@ -43,8 +43,3 @@ linexy(Start = {SX, SY}, End = {EX, EY}, Thickness) ->
 			{Y1, Y2} = tsort(SY, EY),
 			[{round(F(Y)), Y} || Y <- lists:seq(Y1, Y2)]
 	end.
-
-line(Img, Colour, Start, End) ->
-	line(Img, Colour, Start, End, 1).
-line(Img, Colour, Start, End, Thickness) ->
-	set_pixels(Img, Colour, linexy(Start, End, Thickness)).

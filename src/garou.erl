@@ -46,8 +46,7 @@ message_json(S = {_, {_, Path, _}}, [{<<"PLine">>, PLine}|Rest]) ->
 	 ,<<"G">> := G
 	 ,<<"B">> := B
 	 ,<<"A">> := A} = maps:from_list(PLine),
-	F = fun(I) -> img:line(I, {R, G, B, A}, {X0, Y0}, {X1, Y1}, Size) end,
-	?MODULE ! {modlayer, Path, Layer, F},
+	?MODULE ! {modlayer, Path, Layer, {R, G, B, A}, img:line({X0, Y0}, {X1, Y1})},
 	?MODULE ! {roomsend, Path, #{<<"User">> => Name, <<"PLine">> => PLine}},
 	message_json(S, Rest);
 message_json(S, [{<<"NameChange">>, Name}|Rest]) ->
@@ -104,11 +103,11 @@ loop(Rooms, Connections) ->
 			#{S := ID} = Connections,
 			#{Path := {Canvas, Users}} = Rooms,
 			loop(Rooms#{Path => {Canvas, Users#{ID => Client}}}, Connections);
-		{modlayer, Path, Layer, F} ->
+		{modlayer, Path, Layer, Color, Pixels} ->
 			#{Path := {{NLayer, W, H, Layers}, Clients}} = Rooms,
 			true = NLayer >= Layer,
 			{Before, [L|After]} = lists:split(Layer, Layers),
-			{img, W, H, NewL} = F({img, W, H, L}),
+			{img, W, H, NewL} = img:draw({img, W, H, L}, Color, Pixels),
 			loop(Rooms#{Path => {{NLayer, W, H, Before ++ [NewL|After]}, Clients}}, Connections);
 		{roomsend, Path, Msg} ->
 			[ws:send(S, text, jsx:encode(Msg)) || S = {_, {_, TargetPath, _}} <- maps:keys(Connections), TargetPath == Path],
