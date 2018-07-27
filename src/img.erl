@@ -1,21 +1,24 @@
 -module(img).
--export([new/2, draw/3, line/2, line/3]).
+-export([draw/5, line/2, line/3]).
 
 tsort(A, B) when A > B -> {B, A};
 tsort(A, B)            -> {A, B}.
 
-new(W, H) ->
-	{?MODULE, W, H, <<0:(W*H*32)>>}.
-
-draw({?MODULE, W, H, Data}, {R, G, B, A}, {X, Y}) when X < W andalso Y < H ->
+draw({R, G, B, A}, {X, Y}, W, H, Data) when X < W andalso Y < H ->
 	Offset = Y*W*4+X*4,
 	<<Before:Offset/bytes, _:32, After/bytes>> = Data,
-	{?MODULE, W, H, <<Before/bytes, R, G, B, A, After/bytes>>};
+	<<Before/bytes, R, G, B, A, After/bytes>>;
 
-draw(Img, Colour, [Cur|Rest]) ->
-	draw(draw(Img, Colour, Cur), Colour, Rest);
-draw(Img, _, []) ->
-	Img.
+% TODO: pre-compute offsets (Y*W*4+X*4), apply them all at once? might be
+%       doable if you pass only sorted lists
+%   ↑ not gonna work with multiple lines of different colors, coalescing
+%     many different lines might turn out to be slower than just applying
+%     everything naively
+% test cases: one line call, multiple line calls (on a large img like 1000*1000, test the initial time before changing anything)
+draw(Colour, [Cur|Rest], W, H, Data) ->
+	draw(Colour, Rest, W, H, draw(Colour, Cur, W, H, Data));
+draw(_, [], _, _, Data) ->
+	Data.
 
 line_fun({X1, Y1}, {X2, Y2}) ->
 	A = (Y2 - Y1) / (X2 - X1),
