@@ -33,7 +33,7 @@ line(Start, End, Thickness) when Thickness =/= 1 ->
 line({X, SY}, {X, EY}, _Thickness) ->
 	{Y1, Y2} = tsort(SY, EY),
 	[{X, round(Y)} || Y <- lists:seq(Y1, Y2)];
-line(Start = {SX, SY}, End = {EX, EY}, Thickness) ->
+line(Start = {SX, SY}, End = {EX, EY}, _Thickness) ->
 	{Axis, F} = line_fun(Start, End),
 	case Axis of
 		x ->
