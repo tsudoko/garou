@@ -1,7 +1,7 @@
 -module(garou).
 -behaviour(ws).
--export([handshake/1, message/2, close/2]).
--export([start/0, loop/2]).
+-export([handshake/1, message/2, close/2]). % behaviour(ws)
+-export([start/0, loop/2]).                 % public api
 
 handshake(State) ->
 	io:format("got handshake from ~p~n", [State]).
